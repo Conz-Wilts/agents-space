@@ -48,6 +48,8 @@ export function HandleField({ id }: { id: string }) {
   const [focused, setFocused] = useState(false);
   const [value, setValue] = useState("");
   const [check, setCheck] = useState<Check>({ state: "idle" });
+  // Set when typed characters were dropped (e.g. a Korean keyboard), so the field never looks dead.
+  const [dropped, setDropped] = useState(false);
   const placeholder = useTypedPlaceholder(!focused && !value);
 
   async function submit(e: React.FormEvent) {
@@ -85,7 +87,9 @@ export function HandleField({ id }: { id: string }) {
               name="handle"
               value={value}
               onChange={(e) => {
-                setValue(e.target.value.replace(/[^a-z0-9-]/gi, "").toLowerCase().slice(0, 32));
+                const clean = e.target.value.replace(/[^a-z0-9-]/gi, "");
+                setDropped(clean.length < e.target.value.length);
+                setValue(clean.toLowerCase().slice(0, 32));
                 setCheck({ state: "idle" });
               }}
               onFocus={() => setFocused(true)}
@@ -115,6 +119,9 @@ export function HandleField({ id }: { id: string }) {
         </button>
       </form>
       <div id={`${id}-status`} aria-live="polite">
+        {dropped && check.state === "idle" && (
+          <p className="text-[14px] font-medium text-ink">Handles use English letters (a–z), numbers and dashes. Switch your keyboard to English.</p>
+        )}
         {check.state === "taken" && <p className="text-[14px] font-medium text-ink">{check.reason}</p>}
         {check.state === "ready" && <InstallSteps handle={check.handle} />}
       </div>
