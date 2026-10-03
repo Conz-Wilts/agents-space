@@ -287,10 +287,12 @@ const CloseIcon = () => svg(<path d="m4 4 8 8M12 4l-8 8" />);
 
 /** Markdown element styles (no typography plugin). Drops react-markdown's `node` prop before it reaches the DOM. */
 type El = keyof React.JSX.IntrinsicElements;
-const el =
-  (Tag: El, className: string) =>
+const el = (Tag: El, className: string) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  ({ node: _n, ...p }: { node?: unknown; [k: string]: any }) => <Tag className={className} {...p} />;
+  const Md = ({ node: _n, ...p }: { node?: unknown; [k: string]: any }) => <Tag className={className} {...p} />;
+  Md.displayName = `md.${Tag}`;
+  return Md;
+};
 
 const md: Components = {
   h1: el("h3", "mb-3 mt-8 text-[22px] font-medium tracking-[-0.6px] text-ink first:mt-0"),
