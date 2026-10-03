@@ -4,10 +4,10 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-export type NodeIcon = "file" | "folder" | "instructions" | "note" | "table" | "plug" | "model" | "clock";
+export type NodeIcon = "file" | "folder" | "instructions" | "note" | "table" | "plug" | "model" | "clock" | "lock";
 
 /**
- * One entry in the skill tree. A leaf shows a markdown `body` or a server-rendered `panel`;
+ * One entry in the skill tree. A leaf shows a markdown `body`, a server-rendered `panel`, or both (panel below);
  * a folder has `children`. `alert` puts a red dot on the row (and on every folder above it).
  */
 export type TreeNode = {
@@ -20,6 +20,10 @@ export type TreeNode = {
   alert?: boolean;
   /** Folder starts open. */
   open?: boolean;
+  /** Draw as a folder even without children (an empty or locked folder); selecting it shows its body/panel. */
+  folder?: boolean;
+  /** Locked: the viewer can't open it. Shows a lock instead of a count. */
+  locked?: boolean;
 };
 
 type Flat = { node: TreeNode; path: TreeNode[] };
@@ -29,7 +33,15 @@ function flatten(nodes: TreeNode[], path: TreeNode[] = []): Flat[] {
 }
 
 const hasAlert = (n: TreeNode): boolean => !!n.alert || !!n.children?.some(hasAlert);
-const leaves = (n: TreeNode): number => (n.children ? n.children.reduce((s, c) => s + leaves(c), 0) : 1);
+const leaves = (n: TreeNode): number => (n.children ? n.children.reduce((s, c) => s + leaves(c), 0) : n.folder ? 0 : 1);
+const isDir = (n: TreeNode) => !!n.children || !!n.folder;
+
+/** Row geometry (px): rows are 32 tall, each level indents 16, icons are 14 wide. */
+const ROW = 32;
+const INDENT = 16;
+const PAD = 8;
+/** x of the vertical guide under a folder at `depth`: the centre of its icon. */
+const guideX = (depth: number) => PAD + depth * INDENT + 7;
 
 /** Keep nodes whose label or body matches, plus the folders that lead to them. */
 function filterTree(nodes: TreeNode[], q: string): TreeNode[] {
@@ -84,6 +96,9 @@ export function AgentDocs({ tree }: { tree: TreeNode[] }) {
     setQuery("");
   };
 
+  // Raw view is for files; locked and empty folders only carry an explanation.
+  const canRaw = !!current && current.node.body !== undefined && !current.node.folder && !current.node.locked;
+
   return (
     <div className="grid gap-8 md:grid-cols-[260px_1fr] md:gap-10">
       <nav aria-label="Skill files" className="min-w-0 md:border-r md:border-edge md:pr-5">
@@ -125,7 +140,7 @@ export function AgentDocs({ tree }: { tree: TreeNode[] }) {
 
         <ul role="tree" className="max-h-[320px] overflow-y-auto md:max-h-none md:overflow-visible">
           {shown.map((n) => (
-            <Row key={n.id} node={n} depth={0} selected={selected} open={open} forceOpen={!!q} onSelect={select} onToggle={toggle} flat={flat} query={q} />
+            <Row key={n.id} node={n} depth={0} last selected={selected} open={open} forceOpen={!!q} onSelect={select} onToggle={toggle} flat={flat} query={q} />
           ))}
           {q && !shown.length && <li className="px-3 py-2 text-[14px] text-muted">Nothing matches “{query.trim()}”.</li>}
         </ul>
@@ -143,7 +158,7 @@ export function AgentDocs({ tree }: { tree: TreeNode[] }) {
                 )}
                 <h2 className="text-[28px] leading-8 font-medium tracking-[-1px] break-words text-ink">{current.node.label}</h2>
               </div>
-              {current.node.body !== undefined && (
+              {canRaw && (
                 <button
                   type="button"
                   onClick={() => setRaw((r) => !r)}
@@ -154,8 +169,8 @@ export function AgentDocs({ tree }: { tree: TreeNode[] }) {
                 </button>
               )}
             </div>
-            {current.node.panel ??
-              (raw ? (
+            {current.node.body !== undefined &&
+              (raw && canRaw ? (
                 <pre className="overflow-x-auto rounded-lg bg-panel p-4 font-mono text-[13px] leading-relaxed whitespace-pre-wrap break-words text-ink">
                   {current.node.body}
                 </pre>
@@ -166,6 +181,7 @@ export function AgentDocs({ tree }: { tree: TreeNode[] }) {
               ) : (
                 <p className="text-[15px] text-muted">Empty.</p>
               ))}
+            {current.node.panel}
           </>
         )}
       </article>
@@ -176,6 +192,7 @@ export function AgentDocs({ tree }: { tree: TreeNode[] }) {
 function Row({
   node,
   depth,
+  last,
   selected,
   open,
   forceOpen,
@@ -186,6 +203,8 @@ function Row({
 }: {
   node: TreeNode;
   depth: number;
+  /** Last child of its folder: the guide stops at this row's elbow. */
+  last: boolean;
   selected?: string;
   open: Set<string>;
   forceOpen: boolean;
@@ -194,43 +213,69 @@ function Row({
   flat: Flat[];
   query: string;
 }) {
-  const folder = !!node.children;
-  const expanded = folder && (forceOpen || open.has(node.id));
+  const dir = isDir(node);
+  const expandable = !!node.children?.length;
+  const expanded = expandable && (forceOpen || open.has(node.id));
   const active = selected === node.id;
   const alert = hasAlert(node);
+  const x = depth > 0 ? guideX(depth - 1) : 0;
 
   return (
-    <li role="treeitem" aria-expanded={folder ? expanded : undefined} aria-selected={active}>
+    <li role="treeitem" aria-expanded={expandable ? expanded : undefined} aria-selected={active} className="relative">
+      {depth > 0 && (
+        <>
+          {/* Visvine-style branch: the parent's guide runs on past siblings and curves into this row. */}
+          {!last && <span aria-hidden className="pointer-events-none absolute top-0 bottom-0 z-10 w-px bg-edge" style={{ left: x }} />}
+          <span
+            aria-hidden
+            className="pointer-events-none absolute top-0 z-10 rounded-bl-[7px] border-b border-l border-edge"
+            style={{ left: x, width: INDENT - 7 - 3, height: ROW / 2 + 0.5 }}
+          />
+        </>
+      )}
       <button
         type="button"
-        onClick={() => (folder ? onToggle(node.id) : onSelect(flat.find((f) => f.node.id === node.id)))}
-        style={{ paddingLeft: 8 + depth * 14 }}
-        className={`group flex w-full items-center gap-2 rounded-lg py-1.5 pr-2 text-left text-[14px] transition-colors ${
-          active ? "bg-ink text-white" : folder ? "text-ink hover:bg-panel" : "text-muted hover:bg-panel hover:text-ink"
+        onClick={() => (expandable ? onToggle(node.id) : onSelect(flat.find((f) => f.node.id === node.id)))}
+        style={{ paddingLeft: PAD + depth * INDENT, height: ROW }}
+        className={`group flex w-full items-center gap-2 rounded-lg pr-2 text-left text-[14px] transition-colors ${
+          active ? "bg-panel text-ink" : dir ? "text-ink hover:bg-panel" : "text-muted hover:bg-panel hover:text-ink"
         }`}
       >
-        <span className={`flex size-3 shrink-0 items-center justify-center transition-transform duration-200 ${expanded ? "rotate-90" : ""} ${folder ? "" : "invisible"}`}>
-          <Chevron />
+        <span className={active ? "opacity-100" : "opacity-60 group-hover:opacity-90"}>
+          <Icon kind={dir ? (expanded ? "folder-open" : "folder") : (node.icon ?? "file")} />
         </span>
-        <span className={active ? "opacity-90" : "opacity-60 group-hover:opacity-90"}>
-          <Icon kind={folder ? (expanded ? "folder-open" : "folder") : (node.icon ?? "file")} />
-        </span>
-        <span className={`truncate ${folder ? "font-medium" : ""}`}>
+        <span className={`truncate ${dir || active ? "font-medium" : ""}`}>
           <Highlight text={node.label} query={query} />
         </span>
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
           {alert && <span className="size-1.5 rounded-full bg-red-500 ping" aria-label="needs setup" />}
-          {folder && (
-            <span className={`rounded-full px-1.5 py-px font-mono text-[11px] ${active ? "bg-white/15 text-white" : "bg-panel text-muted"}`}>{leaves(node)}</span>
+          {node.locked ? (
+            <span className="text-muted" aria-label="locked">
+              <Icon kind="lock" />
+            </span>
+          ) : (
+            dir && <span className="rounded-full bg-panel px-1.5 py-px font-mono text-[11px] text-muted">{leaves(node)}</span>
           )}
         </span>
       </button>
       {expanded && node.children && (
         <ul role="group" className="relative">
-          {/* Indent guide under the folder's chevron. */}
-          <span aria-hidden className="absolute top-0 bottom-1 w-px bg-edge" style={{ left: 13 + depth * 14 }} />
-          {node.children.map((c) => (
-            <Row key={c.id} node={c} depth={depth + 1} selected={selected} open={open} forceOpen={forceOpen} onSelect={onSelect} onToggle={onToggle} flat={flat} query={query} />
+          {/* Stub from under the folder icon down to the first branch. */}
+          <span aria-hidden className="pointer-events-none absolute z-10 w-px bg-edge" style={{ left: guideX(depth), top: -(ROW / 2 - 9), height: ROW / 2 - 9 }} />
+          {node.children.map((c, i) => (
+            <Row
+              key={c.id}
+              node={c}
+              depth={depth + 1}
+              last={i === node.children!.length - 1}
+              selected={selected}
+              open={open}
+              forceOpen={forceOpen}
+              onSelect={onSelect}
+              onToggle={onToggle}
+              flat={flat}
+              query={query}
+            />
           ))}
         </ul>
       )}
@@ -272,6 +317,8 @@ function Icon({ kind }: { kind: NodeIcon | "folder-open" }) {
       return svg(<path d="M6 1.5v3M10 1.5v3M4 4.5h8v3a4 4 0 0 1-8 0zM8 11.5v3" />);
     case "model":
       return svg(<path d="M8 1.75 13.5 5v6L8 14.25 2.5 11V5zM8 8l5.5-3M8 8 2.5 5M8 8v6.25" />);
+    case "lock":
+      return svg(<path d="M3.75 7.25h8.5v6.5h-8.5zM5.5 7.25V5a2.5 2.5 0 0 1 5 0v2.25" />);
     case "clock":
       return svg(<path d="M8 14.25A6.25 6.25 0 1 0 8 1.75a6.25 6.25 0 0 0 0 12.5zM8 4.5V8l2.5 1.5" />);
     case "note":
@@ -281,7 +328,6 @@ function Icon({ kind }: { kind: NodeIcon | "folder-open" }) {
   }
 }
 
-const Chevron = () => svg(<path d="m6 4 4 4-4 4" />);
 const SearchIcon = () => svg(<path d="M7 12.25a5.25 5.25 0 1 0 0-10.5 5.25 5.25 0 0 0 0 10.5zM14.25 14.25 10.75 10.75" />);
 const CloseIcon = () => svg(<path d="m4 4 8 8M12 4l-8 8" />);
 

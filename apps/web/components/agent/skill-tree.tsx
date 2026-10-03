@@ -10,9 +10,13 @@ type Leaf = { id: string; label: string; body?: string; panel?: ReactNode; alert
  * sub-folders; a lone note or tool still gets its folder so the shape stays predictable.
  */
 export function skillTree(s: {
+  /** The viewer owns the agent (changes the empty-state wording). */
+  owner?: boolean;
   instructions: string;
   notes: ContextNote[];
   tables: DataTable[];
+  /** Rows panel shown under each table's schema. */
+  tableRows?: (t: DataTable) => ReactNode;
   tools: Leaf[];
   schedules: Leaf[];
   models: { current: { label: string; panel: ReactNode; alert?: boolean }; add?: ReactNode };
@@ -25,17 +29,21 @@ export function skillTree(s: {
     tree.push({
       id: "dir:tables",
       label: "Tables",
-      children: s.tables.map((t) => ({ id: `table:${t.name}`, label: t.name, icon: "table", body: tableDoc(t) })),
+      children: s.tables.map((t) => ({ id: `table:${t.name}`, label: t.name, icon: "table", body: tableDoc(t), panel: s.tableRows?.(t) })),
     });
 
-  tree.push({
-    id: "dir:tools",
-    label: "Tools",
-    open: s.tools.some((t) => t.alert),
-    children: s.tools.length
-      ? s.tools.map((t) => ({ ...t, id: `tool:${t.id}`, icon: "plug" as const }))
-      : [{ id: "tool:none", label: "No tools", icon: "plug", body: "None. This agent is instructions only." }],
-  });
+  tree.push(
+    s.tools.length
+      ? { id: "dir:tools", label: "Tools", open: s.tools.some((t) => t.alert), children: s.tools.map((t) => ({ ...t, id: `tool:${t.id}`, icon: "plug" as const })) }
+      : {
+          id: "dir:tools",
+          label: "Tools",
+          folder: true,
+          body: s.owner
+            ? "Nothing here yet. Attach a connector (`create_connector` or `connect_app`, then `attach_connector`) to give this agent actions."
+            : "The owner hasn't shared any tools with you. This agent answers from its instructions and context only.",
+        },
+  );
 
   tree.push({
     id: "dir:models",
@@ -51,6 +59,18 @@ export function skillTree(s: {
     tree.push({ id: "dir:schedules", label: "Schedules", children: s.schedules.map((x) => ({ ...x, id: `schedule:${x.id}`, icon: "clock" as const })) });
 
   return tree;
+}
+
+/**
+ * The same shape for someone without access: every folder locked, and selecting any of them shows
+ * `panel` (the request-access form or a sign-in link).
+ */
+export function lockedTree(panel: ReactNode): TreeNode[] {
+  const body = "You don't have access to this agent yet, so its files stay locked. Ask the owner below.";
+  return [
+    { id: "lock:instructions", label: "Instructions", icon: "instructions", locked: true, body, panel },
+    ...["Context", "Tables", "Tools"].map((label) => ({ id: `lock:${label.toLowerCase()}`, label, folder: true, locked: true, body, panel })),
+  ];
 }
 
 /** "Menu/Drinks" → Menu ▸ Drinks. Folders first, then files, each alphabetical. */

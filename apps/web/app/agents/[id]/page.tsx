@@ -3,7 +3,8 @@ import { notFound } from "next/navigation";
 import { agentTables, describeSchedule, missingSecrets, modelProblem, store } from "@agents-space/core";
 import { getSessionUser } from "@/lib/supabase/server";
 import { AgentDocs } from "@/components/agent/agent-docs";
-import { skillTree } from "@/components/agent/skill-tree";
+import { lockedTree, skillTree } from "@/components/agent/skill-tree";
+import { TableRows } from "@/components/agent/table-rows";
 import { AddModelPanel, ModelPanel } from "@/components/models/model-panel";
 import { OwnerControls } from "@/components/agent/owner-controls";
 import { RequestAccess } from "@/components/agent/request-access";
@@ -21,7 +22,10 @@ export default async function AgentPage({ params }: PageProps<"/agents/[id]">) {
   if (!agent || (!isOwner && (agent.status === "draft" || agent.visibility === "private"))) notFound();
   // A restricted agent shows only its name (and the request button) to people who are not approved.
   const info = await store.canSeeInfo(agent.id, user?.id);
-  const creator = isOwner && user.name ? { name: user.name, avatarUrl: user.avatarUrl } : { name: agent.owner };
+  const creator =
+    isOwner && user.name
+      ? { name: user.name, avatarUrl: user.avatarUrl }
+      : { name: agent.owner, avatarUrl: agent.ownerId ? (await store.getUser(agent.ownerId))?.avatarUrl : undefined };
 
   // Instructions, notes and tools are the agent's skill: only for people who may use it.
   const access = agent.kind === "hosted" && (await store.hasAccess(agent.id, user?.id));
@@ -101,9 +105,11 @@ export default async function AgentPage({ params }: PageProps<"/agents/[id]">) {
           <div className="r rounded-[14px] bg-white p-5 outline outline-1 -outline-offset-1 outline-edge sm:p-8">
             <AgentDocs
               tree={skillTree({
+                owner: isOwner,
                 instructions: agent.instructions,
                 notes,
                 tables,
+                tableRows: (t) => <TableRows agent={agent} table={t} userId={user?.id} />,
                 schedules: schedules.map((x) => ({ id: x.id, label: x.task, body: describeSchedule(x) })),
                 tools: connectors.map(({ scope, connector }) => ({
                   id: scope.connector,
@@ -125,37 +131,48 @@ export default async function AgentPage({ params }: PageProps<"/agents/[id]">) {
             />
           </div>
         ) : (
-          <div className="flex max-w-2xl flex-col gap-6">
-            <Label className="r text-ink">{info ? "About" : "Access"}</Label>
-            {!info && <p className="r text-[17px] leading-[27px] text-muted">The owner shares this agent with specific people. Request access to see and use it.</p>}
-            {info && agent.description && (
-              <p className="r text-[17px] leading-[27px] whitespace-pre-wrap text-ink" style={d(100)}>
-                {agent.description}
-              </p>
-            )}
-            {info && agent.tools.length > 0 && (
-              <ul className="r flex flex-wrap gap-1.5" style={d(200)}>
-                {agent.tools.map((t) => (
-                  <li key={t} className="rounded-md bg-white px-2 py-1 text-[13px] text-ink outline outline-1 -outline-offset-1 outline-edge">
-                    {t}
-                  </li>
-                ))}
-              </ul>
-            )}
-            <div className="r" style={d(300)}>
-              {agent.kind === "external" ? (
-                info && <p className="text-[15px] text-muted">Runs on its owner&apos;s servers, so there&apos;s nothing more to show here.</p>
-              ) : user ? (
-                <RequestAccess agentId={agent.id} status={myRequest?.status === "approved" ? undefined : myRequest?.status} />
-              ) : (
-                <Link
-                  href={`/login?next=/agents/${agent.id}`}
-                  className="inline-flex h-11 items-center rounded-lg bg-ink px-5 text-[15px] font-medium text-white transition-transform duration-200 hover:-translate-y-px active:scale-[0.98]"
-                >
-                  Sign in to request access
-                </Link>
+          <div className="flex flex-col gap-10">
+            <div className="flex max-w-2xl flex-col gap-6">
+              <Label className="r text-ink">{info ? "About" : "Access"}</Label>
+              {!info && <p className="r text-[17px] leading-[27px] text-muted">The owner shares this agent with specific people. Request access to see and use it.</p>}
+              {info && agent.description && (
+                <p className="r text-[17px] leading-[27px] whitespace-pre-wrap text-ink" style={d(100)}>
+                  {agent.description}
+                </p>
+              )}
+              {info && agent.tools.length > 0 && (
+                <ul className="r flex flex-wrap gap-1.5" style={d(200)}>
+                  {agent.tools.map((t) => (
+                    <li key={t} className="rounded-md bg-white px-2 py-1 text-[13px] text-ink outline outline-1 -outline-offset-1 outline-edge">
+                      {t}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {agent.kind === "external" && info && (
+                <p className="r text-[15px] text-muted" style={d(300)}>
+                  Runs on its owner&apos;s servers, so there&apos;s nothing more to show here.
+                </p>
               )}
             </div>
+            {agent.kind === "hosted" && (
+              <div className="r rounded-[14px] bg-white p-5 outline outline-1 -outline-offset-1 outline-edge sm:p-8" style={d(300)}>
+                <AgentDocs
+                  tree={lockedTree(
+                    user ? (
+                      <RequestAccess agentId={agent.id} status={myRequest?.status === "approved" ? undefined : myRequest?.status} />
+                    ) : (
+                      <Link
+                        href={`/login?next=/agents/${agent.id}`}
+                        className="inline-flex h-11 items-center rounded-lg bg-ink px-5 text-[15px] font-medium text-white transition-transform duration-200 hover:-translate-y-px active:scale-[0.98]"
+                      >
+                        Sign in to request access
+                      </Link>
+                    ),
+                  )}
+                />
+              </div>
+            )}
           </div>
         )}
       </section>
