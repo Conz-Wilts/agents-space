@@ -4,6 +4,7 @@ CREATE TABLE "public"."User" (
   "keyHash"   text,
   "authId"    text,
   "email"     text,
+  "stripeAccountId" text,
   "createdAt" timestamp(3) without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "User_pkey" PRIMARY KEY (id)
 );
@@ -11,6 +12,8 @@ CREATE TABLE "public"."User" (
 CREATE UNIQUE INDEX "User_authId_key" ON public."User" USING btree ("authId");
 
 CREATE UNIQUE INDEX "User_handle_key" ON public."User" USING btree (handle);
+
+CREATE UNIQUE INDEX "User_stripeAccountId_key" ON public."User" USING btree ("stripeAccountId");
 
 CREATE UNIQUE INDEX "User_keyHash_key" ON public."User" USING btree ("keyHash");
 

@@ -55,6 +55,8 @@ model User {
   /// Supabase Auth user id (auth.users.id) for people who signed in on the web (Google OAuth).
   authId    String?  @unique
   email     String?
+  /// Stripe Connect (Express) account that receives this user's payments.
+  stripeAccountId String? @unique
   createdAt DateTime @default(now())
 
   agents         Agent[]
@@ -63,6 +65,7 @@ model User {
   deviceLogins   DeviceLogin[]
   aiModels       AiModel[]
   tableRows      TableRow[]
+  payments       Payment[]
 }
 
 model Agent {
@@ -96,6 +99,8 @@ model Agent {
   tables         AgentTable[]
   tableRows      TableRow[]
   schedules      AgentSchedule[]
+  prices         Price[]
+  payments       Payment[]
   modelRef       AiModel?        @relation(fields: [model], references: [name], onDelete: SetNull)
 
   @@index([status])
@@ -235,6 +240,44 @@ model AgentSchedule {
 
   @@index([enabled, nextRunAt])
   @@index([agentId])
+}
+
+/// Something an agent charges for. amount is in the currency's smallest unit.
+model Price {
+  agentId     String
+  name        String
+  title       String
+  description String   @default("")
+  amount      Int
+  currency    String
+  updatedAt   DateTime @updatedAt
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@id([agentId, name])
+}
+
+/// A Stripe Checkout link for one price, paid out to the agent owner (destination charge).
+model Payment {
+  id              String    @id @default(uuid())
+  price           String
+  amount          Int
+  currency        String
+  note            String    @default("")
+  stripeSessionId String    @unique
+  url             String
+  /// open | paid | expired (check constraint in the Supabase schema)
+  status          String    @default("open")
+  createdAt       DateTime  @default(now())
+  paidAt          DateTime?
+
+  agentId String
+  agent   Agent  @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  payerId String?
+  payer   User?   @relation(fields: [payerId], references: [id], onDelete: SetNull)
+
+  @@index([agentId])
+  @@index([payerId])
 }
 
 model AccessRequest {

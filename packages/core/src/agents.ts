@@ -3,6 +3,7 @@ import { store, slug } from "./store";
 import { mcpServerActions, prepareConnector, runConnectorAction } from "./connectors";
 import { encryptSecret } from "./secrets";
 import { tablesSkill } from "./tables";
+import { payablePrices, priceLine } from "./payments";
 import type { ActionParam, Agent, Connector, ConnectorActionInput, User } from "./schema";
 
 /**
@@ -20,6 +21,11 @@ export async function loadSkill(agent: Agent): Promise<string> {
   for (const n of await store.listNotes(agent.id)) parts.push(`## Context: ${n.title}\n\n${n.body}`);
   const tables = await tablesSkill(agent);
   if (tables) parts.push(tables);
+  const prices = await payablePrices(agent);
+  if (prices.length)
+    parts.push(
+      `## Prices\n\n${prices.map((p) => `- ${priceLine(p)}`).join("\n")}\n\nWhen something needs paying (e.g. once a time is picked), call request_payment with the price name and a note saying what it's for. Give the link to your human (or pay it), then confirm with check_payment.`,
+    );
   return parts.join("\n\n");
 }
 

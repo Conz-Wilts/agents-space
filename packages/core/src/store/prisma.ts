@@ -1,7 +1,7 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Prisma, PrismaClient } from "../generated/prisma/client";
 import { matchAgents } from "../match";
-import { ModelSchema, AgentSchema, AgentScheduleSchema, CallerAccessSchema, ConnectorActionSchema, TableColumnSchema, type AccessRequest, type Agent, type AgentSchedule, type Bottleneck, type Connector, type ContextNote, type DataTable, type DeviceLogin, type Model, type TableRow, type User } from "../schema";
+import { ModelSchema, AgentSchema, AgentScheduleSchema, CallerAccessSchema, ConnectorActionSchema, TableColumnSchema, type AccessRequest, type Agent, type AgentSchedule, type Bottleneck, type Connector, type ContextNote, type DataTable, type DeviceLogin, type Model, type Payment, type Price, type TableRow, type User } from "../schema";
 import type { Store } from "./index";
 import { DEVICE_LOGIN_TTL_MS, RESERVED_HANDLES, handleCandidates, hashKey, newApiKey, newDeviceCode, newUserCode, normalizeHandle, normalizeUserCode, slug } from "./util";
 
@@ -28,7 +28,18 @@ const toUser = (r: Prisma.UserGetPayload<object>): User => ({
   keyHash: r.keyHash ?? undefined,
   authId: r.authId ?? undefined,
   email: r.email ?? undefined,
+  stripeAccountId: r.stripeAccountId ?? undefined,
   createdAt: iso(r.createdAt),
+});
+
+const toPrice = (r: Prisma.PriceGetPayload<object>): Price => ({ ...r, updatedAt: iso(r.updatedAt) });
+
+const toPayment = (r: Prisma.PaymentGetPayload<object>): Payment => ({
+  ...r,
+  payerId: r.payerId ?? undefined,
+  status: r.status as Payment["status"],
+  createdAt: iso(r.createdAt),
+  paidAt: r.paidAt ? iso(r.paidAt) : undefined,
 });
 
 const toNote = (r: { agentId: string; slug: string; title: string; body: string; updatedAt: Date }): ContextNote => ({ ...r, updatedAt: iso(r.updatedAt) });
@@ -403,6 +414,38 @@ export function createPrismaStore(connectionString: string): Store {
     },
     async getModelKey(name) {
       return (await db.aiModel.findUnique({ where: { name }, select: { keyCiphertext: true } }))?.keyCiphertext ?? undefined;
+    },
+
+    async setStripeAccount(userId, accountId) {
+      return toUser(await db.user.update({ where: { id: userId }, data: { stripeAccountId: accountId ?? null } }));
+    },
+
+    async listPrices(agentId) {
+      return (await db.price.findMany({ where: { agentId }, orderBy: { amount: "asc" } })).map(toPrice);
+    },
+    async upsertPrice({ agentId, name, ...data }) {
+      return toPrice(await db.price.upsert({ where: { agentId_name: { agentId, name } }, create: { agentId, name, ...data }, update: data }));
+    },
+    async deletePrice(agentId, name) {
+      const { count } = await db.price.deleteMany({ where: { agentId, name } });
+      return count > 0;
+    },
+
+    async addPayment(p) {
+      return toPayment(await db.payment.create({ data: p }));
+    },
+    async getPayment(id) {
+      const r = await db.payment.findUnique({ where: { id } });
+      return r ? toPayment(r) : undefined;
+    },
+    async setPaymentStatus(id, status) {
+      const r = await db.payment.findUnique({ where: { id } });
+      if (!r) throw new Error(`No payment "${id}"`);
+      return toPayment(await db.payment.update({ where: { id }, data: { status, ...(status === "paid" && !r.paidAt ? { paidAt: new Date() } : {}) } }));
+    },
+    async listPayments({ agentId, payerId }) {
+      const rows = await db.payment.findMany({ where: { ...(agentId ? { agentId } : {}), ...(payerId ? { payerId } : {}) }, orderBy: { createdAt: "desc" }, take: 100 });
+      return rows.map(toPayment);
     },
 
     async requestAccess(agentId, requesterId, message = "") {
