@@ -7,6 +7,13 @@ import {
   addContextNote,
   checkAgent,
   createConnector,
+  appTools,
+  appConnectorName,
+  composioEnabled,
+  connectApp,
+  disconnectApp,
+  listApps,
+  myConnections,
   loadSkill,
   missingSecrets,
   runAgentAction,
@@ -112,7 +119,7 @@ async function spaceStatus(user: User, space: Agent) {
     space.instructions,
     "",
     `Next steps (agent_id "${space.id}"):`,
-    "1. Share what it can use: add_context_note (availability, prices, policies, FAQs), create_table for data it should keep (bookings, requests, leads), or create_connector + attach_connector for a calendar or other system.",
+    "1. Share what it can use: add_context_note (availability, prices, policies, FAQs), create_table for data it should keep (bookings, requests, leads), or create_connector (any API or MCP server) / connect_app (1000+ apps like Gmail or Slack, signed in with OAuth) + attach_connector for a calendar or other system.",
     "2. Set your rules in plain words with update_agent instructions: what it answers alone, what it asks you first, what it never touches.",
     `3. Decide who can reach you: allow_access("@their-handle") (list_access, revoke_access). Their agents then call ask_space("${space.id}"). Visibility is "${space.visibility}"; change it with update_agent visibility (public, listed, restricted, private).`,
     ...(!paymentsEnabled()
@@ -775,6 +782,82 @@ const handler = createMcpHandler(
       }),
     );
 
+    if (composioEnabled()) {
+      server.registerTool(
+        "list_apps",
+        {
+          title: "Browse apps (Composio)",
+          description:
+            "Search 1000+ apps your agents can use through Composio: Gmail, Google Calendar, Slack, GitHub, Notion, HubSpot, ... Returns app slugs for connect_app. No API key needed; you sign in to the app itself.",
+          inputSchema: z.object({ search: z.string().optional().describe("e.g. 'email', 'calendar', 'crm'"), limit: z.number().int().min(1).max(50).default(15) }),
+        },
+        safe(async ({ search, limit }) => {
+          const apps = await listApps({ search, limit });
+          return text(
+            apps.map((x) => `${x.slug} — ${x.name}: ${x.description.slice(0, 120)}${x.toolsCount ? ` (${x.toolsCount} tools)` : ""}${x.noAuth ? " [no sign-in]" : ""}`).join("\n") ||
+              "No apps found.",
+          );
+        }),
+      );
+
+      server.registerTool(
+        "app_tools",
+        {
+          title: "List an app's tools",
+          description: "The tools of a Composio app (its main ones, or those matching query), to pick from in connect_app.",
+          inputSchema: z.object({ app: z.string().describe("App slug from list_apps, e.g. gmail"), query: z.string().optional() }),
+        },
+        safe(async ({ app, query }) => {
+          const tools = await appTools(app.toLowerCase(), { query, limit: 50 });
+          return text(tools.map((t) => `${t.slug} — ${t.description.slice(0, 160)}`).join("\n") || "No tools found.");
+        }),
+      );
+
+      server.registerTool(
+        "connect_app",
+        {
+          title: "Connect an app (Composio)",
+          description: [
+            "Connect one of your accounts (Gmail, Slack, GitHub, ...) so your agents can act in it. Creates connector <handle>-composio-<app> with the app's main tools (or the tools you name) and returns a link where you sign in to the app (OAuth, or your key for key-based apps). Open the link, then attach_connector to give an agent scoped access.",
+            "Your agents act on YOUR connected account; callers only get the actions you attach. Run it again to change the tools (reconnect: true for a fresh sign-in).",
+          ].join("\n"),
+          inputSchema: z.object({
+            app: z.string().describe("App slug from list_apps, e.g. gmail"),
+            tools: z.array(z.string()).optional().describe("Tool slugs from app_tools, e.g. GMAIL_SEND_EMAIL. Default: the app's main tools"),
+            reconnect: z.boolean().default(false),
+          }),
+        },
+        safe(async ({ app, tools, reconnect }, ctx) => {
+          const user = await requireUser(ctx);
+          const r = await connectApp(user, app, { tools, reconnect, callbackUrl: `${WEB_URL}/account?connected=${encodeURIComponent(app.toLowerCase())}` });
+          const head = `Connector ${r.connector.name} saved with ${r.connector.actions.length} action(s): ${r.connector.actions.map((a) => a.name).join(", ")}`;
+          const next = `attach_connector(agent_id, "${r.connector.name}", [actions]) to give an agent access.`;
+          if (r.status === "link") return text(`${head}\n\nSign in to ${r.app.name} here (the user must open it):\n${r.redirectUrl}\n\nThen ${next}`);
+          return text(`${head}\n${r.status === "connected" ? `${r.app.name} is already connected.` : `${r.app.name} needs no sign-in.`}\n${next}`);
+        }),
+      );
+
+      server.registerTool(
+        "my_apps",
+        { title: "My connected apps", description: "Your Composio app connections and their status (ACTIVE = ready).", inputSchema: z.object({}) },
+        safe(async (_args, ctx) => {
+          const user = await requireUser(ctx);
+          const cs = await myConnections(user);
+          return text(cs.map((c) => `${c.toolkit}: ${c.status} → connector ${appConnectorName(user, c.toolkit)}`).join("\n") || "No apps connected. Use list_apps and connect_app.");
+        }),
+      );
+
+      server.registerTool(
+        "disconnect_app",
+        { title: "Disconnect an app", description: "Remove your connected account(s) for an app. Agents using its connector stop working until you reconnect.", inputSchema: z.object({ app: z.string() }) },
+        safe(async ({ app }, ctx) => {
+          const user = await requireUser(ctx);
+          const n = await disconnectApp(user, app);
+          return text(n ? `Disconnected ${n} ${app} account(s).` : `No ${app} account connected.`);
+        }),
+      );
+    }
+
     server.registerTool(
       "set_connector_secret",
       {
@@ -1066,7 +1149,7 @@ const handler = createMcpHandler(
             role: "user",
             content: {
               type: "text",
-              text: `Help me build an Agents Space agent that handles: ${job}.\n\nInterview me briefly (max 4 questions in one message): is it a skill other people's agents use, or should it run for me on a schedule (when, in which timezone), who uses it, the rules it must follow, the systems it must act in (their API docs or MCP URL, and how they authenticate), visibility (public, listed, restricted or private). Then: create_account if I have no key → create_agent with clear instructions → add_context_note for policies/FAQs → create_table for each kind of record the agent keeps (pick columns, caller_access and a context that says when to read/write it; e.g. reservations for a restaurant) → create_connector only for outside systems it must act in for each system (http action templates or mcp_url; secrets as {{secret.NAME}} placeholders, never inline) → set_connector_secret when I give a key → attach_connector with the minimum actions → test_agent → publish_agent. Show me the endpoint at the end. For a scheduled agent: create_agent with mode scheduled, skip publishing, then schedule_agent and run_schedule_now to show me a first report.`,
+              text: `Help me build an Agents Space agent that handles: ${job}.\n\nInterview me briefly (max 4 questions in one message): is it a skill other people's agents use, or should it run for me on a schedule (when, in which timezone), who uses it, the rules it must follow, the systems it must act in (their API docs or MCP URL, and how they authenticate), visibility (public, listed, restricted or private). Then: create_account if I have no key → create_agent with clear instructions → add_context_note for policies/FAQs → create_table for each kind of record the agent keeps (pick columns, caller_access and a context that says when to read/write it; e.g. reservations for a restaurant) → for outside systems it must act in: connect_app if list_apps has the app (Gmail, Slack, GitHub, Notion, ...; give me the sign-in link, pick tools with app_tools), else create_connector (http action templates or mcp_url; secrets as {{secret.NAME}} placeholders, never inline) → set_connector_secret when I give a key → attach_connector with the minimum actions → test_agent → publish_agent. Show me the endpoint at the end. For a scheduled agent: create_agent with mode scheduled, skip publishing, then schedule_agent and run_schedule_now to show me a first report.`,
             },
           },
         ],
@@ -1076,7 +1159,7 @@ const handler = createMcpHandler(
   {
     serverInfo: { name: "agents-space", version: "0.2.0" },
     instructions:
-      "Agents Space gives people and businesses a space: their own MCP address that other people's agents call instead of waiting on them. To reach someone (\"ask emma if Saturday works\", \"check @marcos-trattoria for a table\"), call ask_space with their handle. If the user just connected, call my_space first (claim_space if they have none) and help them set it up; allow_access / revoke_access / list_access manage who can use it; enable_payments + set_price let it charge callers. When a space lists Prices, request_payment returns a Stripe checkout link for your user and check_payment confirms it. Agents Space is also a directory of agents as shareable skills. Find agents (describe_bottleneck, search_agents), use them (use_agent, run_agent_action), request access to ones that need approval (request_access), or build your own in natural language (prompt build_agent, or create_agent → add_context_note → create_table → create_connector → attach_connector → test_agent → publish_agent). Agents keep their own data in tables (create_table; built-in 'outputs'); no connector is needed to store data. An agent is either a skill other people's agents call (mode skill) or works for its owner on a schedule (mode scheduled → schedule_agent, run_schedule_now, schedule_runs); add_model / set_agent_model pick the LLM it runs on.",
+      "Agents Space gives people and businesses a space: their own MCP address that other people's agents call instead of waiting on them. To reach someone (\"ask emma if Saturday works\", \"check @marcos-trattoria for a table\"), call ask_space with their handle. If the user just connected, call my_space first (claim_space if they have none) and help them set it up; allow_access / revoke_access / list_access manage who can use it; enable_payments + set_price let it charge callers. When a space lists Prices, request_payment returns a Stripe checkout link for your user and check_payment confirms it. Agents Space is also a directory of agents as shareable skills. Find agents (describe_bottleneck, search_agents), use them (use_agent, run_agent_action), request access to ones that need approval (request_access), or build your own in natural language (prompt build_agent, or create_agent → add_context_note → create_table → create_connector or connect_app → attach_connector → test_agent → publish_agent). Agents keep their own data in tables (create_table; built-in 'outputs'); no connector is needed to store data. An agent is either a skill other people's agents call (mode skill) or works for its owner on a schedule (mode scheduled → schedule_agent, run_schedule_now, schedule_runs); add_model / set_agent_model pick the LLM it runs on.",
   },
 );
 

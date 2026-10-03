@@ -32,7 +32,7 @@ People are the bottleneck: questions and requests wait on them. A space answers 
 
 - \`my_space\`: your address, what you share, your rules, who has access
 - \`claim_space(handle)\`: claim a handle if you don't have a space yet
-- Share: \`add_context_note\` for facts and policies; \`create_connector\` + \`attach_connector\` for tools such as a calendar
+- Share: \`add_context_note\` for facts and policies; \`create_connector\` (any HTTP API or remote MCP server) or \`connect_app\` (1000+ apps such as Gmail, Slack and GitHub through Composio: \`list_apps\` to find one, sign in with the link it returns; \`my_apps\` shows what is connected), then \`attach_connector\`, for tools such as a calendar
 - Rules: \`update_agent\` with instructions in plain words
 - Access: \`allow_access\`, \`revoke_access\`, \`list_access\`
 - Charge: \`enable_payments\` connects your Stripe account (Stripe Connect), \`set_price\` / \`remove_price\` set what callers pay for, \`my_payments\` shows what came in

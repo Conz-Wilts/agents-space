@@ -1,6 +1,7 @@
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { ConnectorActionSchema, type ActionParam, type Connector, type ConnectorAction, type ConnectorActionInput } from "./schema";
 import { decryptSecret } from "./secrets";
+import { executeComposioTool } from "./composio-api";
 
 /**
  * The connector runtime. Actions are declarative — an HTTP request template or a call to a
@@ -80,6 +81,7 @@ export function prepareConnector(spec: { actions: ConnectorActionInput[]; hosts?
     const a = ConnectorActionSchema.parse(input);
     if (names.has(a.name)) throw new Error(`Two actions are named "${a.name}".`);
     names.add(a.name);
+    if (a.type === "composio") return a;
 
     const origin = a.url.match(/^(https?:\/\/[^/?#]+)/)?.[1];
     if (!origin) throw new Error(`Action "${a.name}": url must start with https:// (got "${a.url}").`);
@@ -192,5 +194,10 @@ export async function runConnectorAction(c: Connector, actionName: string, args:
   const secrets = Object.fromEntries(needed.map((s) => [s, decryptSecret(ciphertexts[s])]));
 
   const ctx: Ctx = { args, secrets };
+  if (a.type === "composio") {
+    // Only declared params reach Composio, and always as the connector owner's account.
+    const declared = Object.fromEntries(Object.entries(args).filter(([k, v]) => k in a.params && v !== undefined));
+    return executeComposioTool(a.tool, c.ownerId, declared);
+  }
   return a.type === "http" ? runHttp(c, a, ctx) : runMcp(c, a, ctx);
 }

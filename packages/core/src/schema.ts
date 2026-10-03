@@ -226,7 +226,17 @@ export const McpActionSchema = z.object({
   tool: z.string().optional(),
 });
 
-export const ConnectorActionSchema = z.discriminatedUnion("type", [HttpActionSchema, McpActionSchema]);
+/**
+ * Runs one Composio tool (e.g. `GMAIL_SEND_EMAIL`) on the connector owner's connected account,
+ * with the platform's Composio key. Created by `connect_app`, never by hand.
+ */
+export const ComposioActionSchema = z.object({
+  ...actionBase,
+  type: z.literal("composio"),
+  tool: z.string().regex(/^[A-Z0-9_]+$/),
+});
+
+export const ConnectorActionSchema = z.discriminatedUnion("type", [HttpActionSchema, McpActionSchema, ComposioActionSchema]);
 export type ConnectorAction = z.infer<typeof ConnectorActionSchema>;
 export type ConnectorActionInput = z.input<typeof ConnectorActionSchema>;
 
