@@ -23,7 +23,7 @@ _Last updated: 2026-10-03_
 - [x] Web owner controls on `/agents/<id>`: Public/Private switch, Share (copy page / MCP link); My agents lists pending access requests with Approve/Deny; non-owners on private agents get a Request access form
 - [x] Web connector secrets: owners set connector secrets on the agent page and in `/account` → Connectors & secrets (write-only; web needs `CONNECTOR_SECRETS_KEY`)
 - [x] Sign-in `redirectTo` is the bare `/auth/callback`; `next` rides in an `auth_next` cookie so Supabase's exact allowlist match works
-- [x] `/directory` and `/my-agents` restyled in the landing design (landing Nav + Footer + LandingMotion, landing tokens only; shared pieces in `components/landing/directory.tsx`). Agent pages and `/account` still use the old `SiteHeader` look
+- [x] Every web page is in the landing design: `/directory`, `/my-agents`, `/agents/<id>`, `/account` and a 404 share `AppPage` (landing nav + footer + motion); login/device/consent cards already matched. The old Agent Book header, user menu, `ui.tsx` and the `surface`/`fg`/`brand` tokens are gone
 - [x] Landing motion: scroll reveals, hero conversation plays out, task log checks off, network lines draw + packets flow, typed handle field, sticky frosted nav, spotlight on dark sections; reduced-motion safe
 - [x] RLS lockdown (2026-10-03): all 8 remaining public tables RLS-enabled, no anon/authenticated grants, default table privileges for those roles removed (`supabase/migrations/20261003204622_rls_lockdown.sql`). Applied to the remote DB; security advisor shows 0 RLS errors.
 

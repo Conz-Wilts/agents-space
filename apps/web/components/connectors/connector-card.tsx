@@ -12,15 +12,15 @@ export async function ConnectorCard({ connector: c, only, owner }: { connector: 
   return (
     <div className="flex flex-col gap-3">
       <div>
-        <h3 className="text-base font-semibold">{c.title}</h3>
-        {c.description && <p className="text-sm text-fg-muted">{c.description}</p>}
+        <h3 className="text-[19px] font-medium tracking-[-0.4px] text-ink">{c.title}</h3>
+        {c.description && <p className="mt-1 text-[15px] leading-[23px] text-muted">{c.description}</p>}
       </div>
 
-      <ul className="flex flex-col divide-y divide-line rounded-xl border border-line">
+      <ul className="flex flex-col divide-y divide-edge overflow-hidden rounded-[14px] bg-white outline outline-1 -outline-offset-1 outline-edge">
         {actions.map((a) => (
-          <li key={a.name} className="px-3 py-2">
-            <code className="font-mono text-xs font-medium">{a.name}</code>
-            <p className="text-xs text-fg-muted">{a.description}</p>
+          <li key={a.name} className="flex flex-col gap-1 px-4 py-3">
+            <code className="font-mono text-[13px] text-ink">{a.name}</code>
+            <p className="text-[14px] leading-[21px] text-muted">{a.description}</p>
           </li>
         ))}
         {owner && c.secrets.map((s) => <SecretForm key={s} connector={c.name} name={s} isSet={!!set[s]} />)}

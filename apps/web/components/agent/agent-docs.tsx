@@ -13,8 +13,9 @@ export function AgentDocs({ docs, tools, toolsAlert }: { docs: Doc[]; tools?: Re
   const doc = docs.find((d) => d.id === selected);
 
   return (
-    <div className="grid gap-6 md:grid-cols-[200px_1fr]">
-      <nav className="flex gap-1 overflow-x-auto md:flex-col md:overflow-visible">
+    <div className="grid gap-8 md:grid-cols-[220px_1fr] md:gap-10">
+      <nav className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 md:mx-0 md:flex-col md:overflow-visible md:border-r md:border-edge md:px-0 md:pr-6">
+        <p className="mb-2 hidden font-mono text-[12px] uppercase tracking-[1px] text-muted md:block">Skill</p>
         {docs.map((d) => (
           <Item key={d.id} active={selected === d.id} onClick={() => setSelected(d.id)} icon={<FileIcon />}>
             {d.title}
@@ -30,19 +31,19 @@ export function AgentDocs({ docs, tools, toolsAlert }: { docs: Doc[]; tools?: Re
       <article className="min-w-0">
         {doc ? (
           <>
-            <div className="mb-6 flex items-start justify-between gap-4">
-              <h2 className="text-2xl font-semibold">{doc.title}</h2>
+            <div className="mb-6 flex items-start justify-between gap-4 border-b border-edge pb-5">
+              <h2 className="text-[28px] leading-8 font-medium tracking-[-1px] text-ink">{doc.title}</h2>
               <button
                 type="button"
                 onClick={() => setRaw((r) => !r)}
                 aria-pressed={raw}
-                className={`flex shrink-0 items-center gap-1.5 border-b-2 pb-1 text-sm ${raw ? "border-brand text-fg" : "border-transparent text-fg-muted hover:text-fg"}`}
+                className={`flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-3 font-mono text-[12px] uppercase tracking-[1px] transition-colors ${raw ? "bg-ink text-white" : "text-muted outline outline-1 -outline-offset-1 outline-edge hover:text-ink"}`}
               >
-                <span className="font-mono text-xs">&lt;/&gt;</span> Raw
+                <span>&lt;/&gt;</span> Raw
               </button>
             </div>
             {raw ? (
-              <pre className="overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-fg-secondary">
+              <pre className="overflow-x-auto rounded-lg bg-panel p-4 font-mono text-[13px] leading-relaxed whitespace-pre-wrap break-words text-ink">
                 {doc.body}
               </pre>
             ) : doc.body.trim() ? (
@@ -50,7 +51,7 @@ export function AgentDocs({ docs, tools, toolsAlert }: { docs: Doc[]; tools?: Re
                 {doc.body}
               </Markdown>
             ) : (
-              <p className="text-sm text-fg-muted">Empty.</p>
+              <p className="text-[15px] text-muted">Empty.</p>
             )}
           </>
         ) : (
@@ -78,11 +79,11 @@ function Item({
     <button
       type="button"
       onClick={onClick}
-      className={`flex max-w-44 shrink-0 items-center gap-2 rounded-lg px-2.5 py-1.5 md:max-w-none text-left text-sm ${active ? "bg-surface-subtle font-medium text-fg" : "text-fg-secondary hover:bg-surface-subtle"}`}
+      className={`flex max-w-44 shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[15px] transition-colors md:max-w-none ${active ? "bg-ink text-white" : "text-muted hover:bg-panel hover:text-ink"}`}
     >
-      <span className="text-fg-muted">{icon}</span>
+      <span className="opacity-70">{icon}</span>
       <span className="truncate">{children}</span>
-      {alert && <span className="ml-auto size-1.5 shrink-0 rounded-full bg-red-500" aria-label="needs setup" />}
+      {alert && <span className="ml-auto size-1.5 shrink-0 rounded-full bg-red-500 ping" aria-label="needs setup" />}
     </button>
   );
 }
@@ -108,16 +109,16 @@ const el =
   ({ node: _n, ...p }: { node?: unknown; [k: string]: any }) => <Tag className={className} {...p} />;
 
 const md: Components = {
-  h1: el("h3", "mb-3 mt-6 text-lg font-semibold first:mt-0"),
-  h2: el("h3", "mb-2 mt-6 text-base font-semibold first:mt-0"),
-  h3: el("h4", "mb-2 mt-5 text-sm font-semibold first:mt-0"),
-  p: el("p", "mb-3 text-sm leading-relaxed"),
-  ul: el("ul", "mb-3 list-disc space-y-1 pl-5 text-sm"),
-  ol: el("ol", "mb-3 list-decimal space-y-1 pl-5 text-sm"),
-  a: el("a", "text-brand hover:underline"),
-  code: el("code", "rounded bg-surface-subtle px-1 py-0.5 font-mono text-xs"),
-  pre: el("pre", "mb-3 overflow-x-auto rounded-lg bg-surface-subtle p-3 text-xs"),
-  table: el("table", "mb-3 block w-full overflow-x-auto border-collapse text-sm"),
-  th: el("th", "border border-line bg-surface-subtle px-3 py-1.5 text-left font-medium"),
-  td: el("td", "border border-line px-3 py-1.5"),
+  h1: el("h3", "mb-3 mt-8 text-[22px] font-medium tracking-[-0.6px] text-ink first:mt-0"),
+  h2: el("h3", "mb-2 mt-7 text-[19px] font-medium tracking-[-0.4px] text-ink first:mt-0"),
+  h3: el("h4", "mb-2 mt-6 font-mono text-[12px] uppercase tracking-[1px] text-muted first:mt-0"),
+  p: el("p", "mb-4 text-[16px] leading-[26px] text-ink"),
+  ul: el("ul", "mb-4 list-disc space-y-1.5 pl-5 text-[16px] leading-[26px] text-ink marker:text-muted"),
+  ol: el("ol", "mb-4 list-decimal space-y-1.5 pl-5 text-[16px] leading-[26px] text-ink marker:font-mono marker:text-muted"),
+  a: el("a", "text-ink underline decoration-edge underline-offset-4 transition-colors hover:decoration-ink"),
+  code: el("code", "rounded bg-panel px-1.5 py-0.5 font-mono text-[13px]"),
+  pre: el("pre", "mb-4 overflow-x-auto rounded-lg bg-panel p-4 text-[13px]"),
+  table: el("table", "mb-4 block w-full overflow-x-auto border-collapse text-[14px] text-ink"),
+  th: el("th", "border border-edge bg-panel px-3 py-2 text-left font-mono text-[12px] font-normal uppercase tracking-[1px] text-muted"),
+  td: el("td", "border border-edge px-3 py-2"),
 };

@@ -6,8 +6,9 @@ import { AgentDocs } from "@/components/agent/agent-docs";
 import { OwnerControls } from "@/components/agent/owner-controls";
 import { RequestAccess } from "@/components/agent/request-access";
 import { ConnectorCard } from "@/components/connectors/connector-card";
-import { SiteHeader } from "../../header";
-import { Avatar } from "../../ui";
+import { AppPage } from "@/components/landing/app-page";
+import { Monogram } from "@/components/landing/directory";
+import { Eyebrow, Label, d } from "@/components/landing/primitives";
 
 export default async function AgentPage({ params }: PageProps<"/agents/[id]">) {
   const { id } = await params;
@@ -30,76 +31,119 @@ export default async function AgentPage({ params }: PageProps<"/agents/[id]">) {
       : undefined;
   const needsSetup =
     isOwner && (await Promise.all(connectors.map(async ({ connector: c }) => !c || (await missingSecrets(c)).length > 0))).some(Boolean);
+  const status = agent.status === "draft" ? "Draft" : agent.visibility === "private" ? "Private" : "Public";
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-4 py-6 sm:px-6">
-      <SiteHeader />
-      <main className="mx-auto flex w-full max-w-5xl flex-col gap-10">
-        <header className="flex flex-col gap-2">
-          <Link href={isOwner ? "/my-agents" : "/directory"} className="text-sm text-fg-muted hover:text-fg">
-            ← {isOwner ? "My agents" : "Directory"}
-          </Link>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h1 className="text-3xl font-semibold">{agent.name}</h1>
-            {isOwner && (
-              <OwnerControls agentId={agent.id} visibility={agent.visibility} endpoint={agent.endpoint} draft={agent.status === "draft"} />
-            )}
+    <AppPage>
+      <section data-animate className="flex flex-col gap-10 px-5 pt-10 pb-14 sm:px-10 lg:px-20 lg:pt-16 lg:pb-20">
+        <Link
+          href={isOwner ? "/my-agents" : "/directory"}
+          className="r w-fit font-mono text-[13px] uppercase tracking-[1px] text-muted transition-colors hover:text-ink"
+        >
+          ← {isOwner ? "My agents" : "Directory"}
+        </Link>
+        <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
+          <div className="flex min-w-0 flex-col gap-6 lg:max-w-[820px]">
+            <Eyebrow className="r">
+              {[agent.category, agent.protocol, agent.kind === "hosted" ? "Hosted" : "External"].filter(Boolean).join(" · ")}
+            </Eyebrow>
+            <h1
+              className="r-mask text-[40px] leading-[1.02] font-medium tracking-[-1.6px] break-words text-ink sm:text-[52px] lg:text-[64px] lg:leading-[64px] lg:tracking-[-2.6px]"
+              style={d(100)}
+            >
+              <span>
+                <span>{agent.name}</span>
+              </span>
+            </h1>
+            <p className="r text-[17px] leading-[26px] text-muted sm:text-[19px] sm:leading-[28px]" style={d(250)}>
+              {agent.tagline}
+            </p>
+            <div className="r flex flex-wrap items-center gap-3" style={d(350)}>
+              <span className="flex items-center gap-2">
+                <Monogram name={agent.owner} size={28} />
+                <span className="text-[15px] text-ink">{agent.owner}</span>
+              </span>
+              <span className="rounded-full px-2.5 py-1 font-mono text-[11px] uppercase tracking-[1px] text-ink outline outline-1 -outline-offset-1 outline-edge">
+                {status}
+              </span>
+            </div>
           </div>
-          <p className="text-fg-secondary">{agent.tagline}</p>
-          <p className="flex items-center gap-1.5 text-xs text-fg-muted">
-            <Avatar name={agent.owner} size={16} />
-            {agent.owner}
-            <span aria-hidden>·</span>
-            {agent.status === "draft" ? "Draft" : agent.visibility === "private" ? "Private" : "Public"}
-          </p>
-        </header>
+          {isOwner && (
+            <div className="r lg:shrink-0" style={d(450)}>
+              <OwnerControls agentId={agent.id} visibility={agent.visibility} endpoint={agent.endpoint} draft={agent.status === "draft"} />
+            </div>
+          )}
+        </div>
+      </section>
 
+      <section data-animate className="border-t border-edge bg-panel px-5 py-14 sm:px-10 lg:px-20 lg:py-20">
         {access ? (
-          <AgentDocs
-            docs={[
-              { id: "instructions", title: "Instructions", body: agent.instructions },
-              ...notes.map((n) => ({ id: `note:${n.slug}`, title: n.title, body: n.body })),
-            ]}
-            toolsAlert={needsSetup}
-            tools={
-              <div className="flex flex-col gap-8">
-                <h2 className="text-2xl font-semibold">Tools</h2>
-                {connectors.length === 0 ? (
-                  <p className="text-sm text-fg-muted">None. This agent is instructions only.</p>
-                ) : (
-                  connectors.map(({ scope, connector }) =>
-                    connector ? (
-                      <ConnectorCard
-                        key={scope.connector}
-                        connector={connector}
-                        only={scope.actions}
-                        owner={isOwner && connector.ownerId === user?.id}
-                      />
-                    ) : (
-                      <p key={scope.connector} className="text-sm text-red-700">
-                        <code className="font-mono">{scope.connector}</code> no longer exists.
-                      </p>
-                    ),
-                  )
-                )}
-              </div>
-            }
-          />
+          <div className="r rounded-[14px] bg-white p-5 outline outline-1 -outline-offset-1 outline-edge sm:p-8">
+            <AgentDocs
+              docs={[
+                { id: "instructions", title: "Instructions", body: agent.instructions },
+                ...notes.map((n) => ({ id: `note:${n.slug}`, title: n.title, body: n.body })),
+              ]}
+              toolsAlert={needsSetup}
+              tools={
+                <div className="flex flex-col gap-8">
+                  <h2 className="text-[28px] leading-8 font-medium tracking-[-1px] text-ink">Tools</h2>
+                  {connectors.length === 0 ? (
+                    <p className="text-[15px] text-muted">None. This agent is instructions only.</p>
+                  ) : (
+                    connectors.map(({ scope, connector }) =>
+                      connector ? (
+                        <ConnectorCard
+                          key={scope.connector}
+                          connector={connector}
+                          only={scope.actions}
+                          owner={isOwner && connector.ownerId === user?.id}
+                        />
+                      ) : (
+                        <p key={scope.connector} className="text-[15px] text-red-700">
+                          <code className="font-mono">{scope.connector}</code> no longer exists.
+                        </p>
+                      ),
+                    )
+                  )}
+                </div>
+              }
+            />
+          </div>
         ) : (
-          <div className="flex flex-col gap-4">
-            {agent.description && <p className="max-w-xl whitespace-pre-wrap text-sm text-fg-secondary">{agent.description}</p>}
-            {agent.kind === "external" ? (
-              <p className="text-sm text-fg-muted">Runs on its owner&apos;s servers, so there&apos;s nothing more to show here.</p>
-            ) : user ? (
-              <RequestAccess agentId={agent.id} status={myRequest?.status === "approved" ? undefined : myRequest?.status} />
-            ) : (
-              <Link href={`/login?next=/agents/${agent.id}`} className="text-sm text-brand hover:underline">
-                Sign in to request access
-              </Link>
+          <div className="flex max-w-2xl flex-col gap-6">
+            <Label className="r text-ink">About</Label>
+            {agent.description && (
+              <p className="r text-[17px] leading-[27px] whitespace-pre-wrap text-ink" style={d(100)}>
+                {agent.description}
+              </p>
             )}
+            {agent.tools.length > 0 && (
+              <ul className="r flex flex-wrap gap-1.5" style={d(200)}>
+                {agent.tools.map((t) => (
+                  <li key={t} className="rounded-md bg-white px-2 py-1 text-[13px] text-ink outline outline-1 -outline-offset-1 outline-edge">
+                    {t}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="r" style={d(300)}>
+              {agent.kind === "external" ? (
+                <p className="text-[15px] text-muted">Runs on its owner&apos;s servers, so there&apos;s nothing more to show here.</p>
+              ) : user ? (
+                <RequestAccess agentId={agent.id} status={myRequest?.status === "approved" ? undefined : myRequest?.status} />
+              ) : (
+                <Link
+                  href={`/login?next=/agents/${agent.id}`}
+                  className="inline-flex h-11 items-center rounded-lg bg-ink px-5 text-[15px] font-medium text-white transition-transform duration-200 hover:-translate-y-px active:scale-[0.98]"
+                >
+                  Sign in to request access
+                </Link>
+              )}
+            </div>
           </div>
         )}
-      </main>
-    </div>
+      </section>
+    </AppPage>
   );
 }

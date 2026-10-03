@@ -15,7 +15,7 @@ Built for the Vercel hackathon. Ship fast; keep it simple.
 | Path | What |
 |---|---|
 | `apps/mcp` | **The product.** Next.js app hosting the MCP server at `/mcp` via `mcp-handler` v2 (Streamable HTTP). Port 3001. Tools in `app/mcp/route.ts`. |
-| `apps/web` | Human-facing site. Next.js 16 App Router + Tailwind v4. Port 3000. `/` = landing page, `/directory` = agent directory (Agent Book), `/login` + `/account` + `/oauth/consent` = Supabase sign-in, API keys and MCP OAuth consent, `/device` + `/api/device/{start,poll}` = CLI device login, `/cli.mjs` = the CLI script (copied from `packages/cli` at build), `/api/agents` = public JSON, `/api/handles/<h>` = handle availability. |
+| `apps/web` | Human-facing site. Next.js 16 App Router + Tailwind v4. Port 3000. `/` = landing page, `/directory` = agent directory, `/login` + `/account` + `/oauth/consent` = Supabase sign-in, API keys and MCP OAuth consent, `/device` + `/api/device/{start,poll}` = CLI device login, `/cli.mjs` = the CLI script (copied from `packages/cli` at build), `/api/agents` = public JSON, `/api/handles/<h>` = handle availability. |
 | `packages/core` | Shared zod schemas (`Agent`, `User`, `Connector`, `AccessRequest`, `Bottleneck`), seed data, matching, `Store` (`store/`: Prisma + in-memory fallback), connector runtime (`connectors.ts`), secret encryption (`secrets.ts`), hosted-agent logic (`agents.ts`). Prisma schema in `prisma/schema.prisma`. Both apps import `@agents-space/core` (TS source, via `transpilePackages`). |
 | `packages/cli` | `agents-space` CLI (zero-dependency, one file). `agents-space login` runs the device flow and registers the MCP server with Claude Code using an API key. Publish to npm to enable `npx agents-space login`. |
 | `docs/memory/` | **Project memory for LLMs.** Read before working, update after decisions. |
@@ -61,9 +61,9 @@ Per-agent server `/a/<id>/mcp`: the shareable link. A space is the same server a
 ## Web app (`apps/web`)
 - **Landing (`/`)** is coded from the Pencil design file `~/Pens/AgentSpace.pen`, frame "Agent Space — Landing". Read it via the Pencil MCP (`get_app_state` → `execute` / `Export`), never by opening the `.pen` file directly. Sections live in `apps/web/components/landing/`.
 - **Agent logos** (Muse, Instinct, Grok Bot, Claude, ChatGPT) live in `apps/web/public/agents/`, registered in `components/landing/agents.tsx`. Scenes using them are illustrative; keep the non-affiliation disclaimer in `AgentStrip` whenever real brands appear.
-- **Directory (`/directory`)** is the Agent Book UI (`app/directory/page.tsx` + `app/ui.tsx`).
 - **Auth**: Supabase Auth with Google (`lib/supabase/server.ts`, `proxy.ts` refreshes the session); the sign-in modal is the `@auth` parallel route.
-- **Tokens** (`app/globals.css` `@theme`): the directory uses `surface`, `fg`, `line`, `brand`…; the landing uses `ink`, `muted`, `edge`, `panel`, `wait`, `dark-*`, mirroring the .pen variables. Don't mix the two sets.
+- **Tokens** (`app/globals.css` `@theme`): one set for every page — `ink`, `muted`, `edge`, `panel`, `wait`, `dark-*`, mirroring the .pen variables.
+- **App pages** (directory, my agents, agent pages, account, 404) use the landing design: wrap them in `AppPage` (`components/landing/app-page.tsx`: landing nav + footer + motion) and build from `components/landing/directory.tsx` (`PageTitle`, `SectionHead`, `AgentTile`, `Monogram`). Login, device and OAuth consent are standalone cards in the same style.
 - **Landing motion** is CSS plus one client observer (`components/landing/motion.tsx`), with no animation library. Mark a block `data-animate`; its children use reveal classes (`.r`, `.r-pop`, `.r-fade`, `.r-mask`, `.r-type`, `.r-draw`, `.r-grow`, `.r-progress`) staggered with `style={d(ms)}` from `primitives.tsx`. Don't nest `data-animate` blocks, because an outer `data-in` triggers inner reveals early. Keep `prefers-reduced-motion` working (everything visible, nothing moving).
 - Server components by default. A server component can't call helpers exported from a `"use client"` file.
 - Check UI changes in a browser at 1440px and 390px (no horizontal overflow).
