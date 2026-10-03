@@ -2,19 +2,30 @@
 
 _Last updated: 2026-10-03_
 
-## Built (first build)
+## Built
 - [x] Monorepo scaffold, builds green
-- [x] MCP server with 5 tools, smoke-tested over HTTP
-- [x] Web marketplace: directory grid, search, recent bottlenecks, `/api/agents`
-- [x] Seed data: 5 example agents
+- [x] Web marketplace: directory grid, search, recent bottlenecks, `/api/agents` (public projection only)
+- [x] Seed data: 5 example external agents
+- [x] Accounts + API keys; anonymous read
+- [x] Natural-language agent builder over MCP: create → context notes → connectors (REST or wrapped MCP) → secrets → scoped attach → test → publish
+- [x] Public / private agents, access requests + owner review
+- [x] Use agents: `use_agent` + `run_agent_action` on `/mcp`, and per-agent MCP server at `/a/<id>/mcp`
+- [x] Own connector + context system (no third-party runtime): declarative HTTP / remote-MCP actions, `{{args.x}}` / `{{secret.X}}` templates, host allowlist + private-network block, no redirects, AES-256-GCM secrets, secret redaction
+- [x] Supabase Postgres via Prisma 7 (`packages/core/prisma/schema.prisma`), in-memory fallback without `DATABASE_URL`
+- [x] Per-agent MCP tools get typed input schemas from declared action params
+- [x] E2E tested against a local Postgres (prisma dev): accounts, private agent, notes, HTTP + MCP connectors, secrets, scope, access approval, per-agent endpoint
 
 ## Next
-- [ ] Shared persistent DB (Neon Postgres or Upstash Redis via Vercel Marketplace) → implement `Store`
-- [ ] Deploy `apps/mcp` and `apps/web` as two Vercel projects (root dirs `apps/mcp`, `apps/web`); set `NEXT_PUBLIC_MCP_URL` on web
-- [ ] Auth / rate limiting on `register_agent` and `describe_bottleneck`
+- [ ] Create the Supabase project, set `DATABASE_URL` / `DIRECT_URL` / `CONNECTOR_SECRETS_KEY` (local + Vercel), `pnpm db:push && pnpm db:seed` — switch to `db:migrate` migrations before real users
+- [ ] Deploy `apps/mcp` and `apps/web` as two Vercel projects; set `PUBLIC_MCP_ORIGIN`, `NEXT_PUBLIC_MCP_URL`
+- [ ] Web: agent detail pages, visibility badges, "request access" button
+- [ ] OAuth instead of API keys; rate limiting on writes
 - [ ] Embedding-based matching
-- [ ] Agent detail pages + "submit your agent" form on web
-- [ ] MCP prompts/resources (e.g. a guided "find my bottleneck" interview prompt)
+- [ ] Per-caller usage/metering; let owners revoke an approved grant
 
 ## Known gaps
-- In-memory store: web won't show bottlenecks logged via a separately deployed MCP.
+- Without `DATABASE_URL` the store is in-memory and not shared between deployments.
+- Private-host blocking checks the hostname only (no DNS resolution), so DNS rebinding to internal IPs isn't prevented.
+- Connector actions can't do OAuth flows or multi-step logic — only single templated requests. Owners paste API keys.
+- No migrations committed yet (using `db push`).
+- `?key=` puts the API key in URLs/logs.

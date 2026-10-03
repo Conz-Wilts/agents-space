@@ -1,0 +1,91 @@
+import { createMcpHandler } from "mcp-handler";
+import { z } from "zod";
+import { store, loadSkill, runAgentAction, scopedActions, type ActionParam } from "@agents-space/core";
+import { currentUser, requireUser, withApiKey } from "@/lib/auth";
+import { safe, text } from "@/lib/format";
+
+const zodFor: Record<ActionParam["type"], () => z.ZodType> = {
+  string: () => z.string(),
+  number: () => z.number(),
+  boolean: () => z.boolean(),
+  object: () => z.record(z.string(), z.unknown()),
+  array: () => z.array(z.unknown()),
+};
+
+/** A tool input schema from an action's declared params. */
+function paramsSchema(params: Record<string, ActionParam>) {
+  return z.object(
+    Object.fromEntries(
+      Object.entries(params).map(([k, p]) => {
+        const t = p.description ? zodFor[p.type]().describe(p.description) : zodFor[p.type]();
+        return [k, p.required ? t : t.optional()];
+      }),
+    ),
+  );
+}
+
+/**
+ * One hosted agent as its own MCP server — the link an owner shares (website, Google Business
+ * profile, another agent's config). Tools = the agent's scoped connector actions; the skill is
+ * sent as server instructions and via the `instructions` tool. No access → only request_access.
+ */
+async function serve(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const { id } = await ctx.params;
+  const agent = await store.getAgent(id);
+  if (!agent || agent.kind !== "hosted") return Response.json({ error: `No hosted agent "${id}"` }, { status: 404 });
+
+  const userId = req.auth?.clientId;
+  const access = await store.hasAccess(agent.id, userId);
+  const [skill, actions] = access ? await Promise.all([loadSkill(agent), scopedActions(agent)]) : ["", []];
+
+  const handler = createMcpHandler(
+    (server) => {
+      if (!access) {
+        server.registerTool(
+          "request_access",
+          {
+            title: `Request access to ${agent.name}`,
+            description: `${agent.name} is ${agent.status === "published" ? "private" : "not published"}. Ask the owner for access (needs an Agents Space API key).`,
+            inputSchema: z.object({ message: z.string().default("") }),
+          },
+          safe(async ({ message }, c) => {
+            const user = await requireUser(c);
+            const r = await store.requestAccess(agent.id, user.id, message);
+            return text(`Request ${r.id} is ${r.status}. Reconnect once the owner approves.`);
+          }),
+        );
+        return;
+      }
+
+      server.registerTool(
+        "instructions",
+        { title: "How this agent works", description: `Read first: ${agent.name}'s instructions and context.`, inputSchema: z.object({}) },
+        async () => text(skill),
+      );
+
+      for (const a of actions)
+        server.registerTool(
+          `${a.connector}__${a.action}`.slice(0, 64),
+          {
+            title: a.action.replace(/_/g, " "),
+            description: a.description,
+            inputSchema: paramsSchema(a.params),
+          },
+          safe(async (args: Record<string, unknown>, c) => {
+            // Re-check: access may have been revoked since this server was built.
+            if (!(await store.hasAccess(agent.id, (await currentUser(c))?.id))) throw new Error("Access revoked.");
+            return text(JSON.stringify(await runAgentAction(agent, a.connector, a.action, args), null, 2).slice(0, 20000));
+          }),
+        );
+    },
+    {
+      serverInfo: { name: `agents-space/${agent.id}`, version: "1.0.0" },
+      instructions: access ? skill.slice(0, 8000) : `${agent.name}: ${agent.tagline} (access required)`,
+    },
+  );
+  return handler(req);
+}
+
+const route = (req: Request, ctx: { params: Promise<{ id: string }> }) => withApiKey((r) => serve(r, ctx))(req);
+
+export { route as GET, route as POST, route as DELETE };

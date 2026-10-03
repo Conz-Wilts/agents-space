@@ -1,26 +1,43 @@
 @import "tailwindcss";
 
+/*
+ * Design tokens. Light only: neutral grays, one blue accent, soft blue washes for imagery.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: light;
+  --surface: #ffffff;
+  --surface-subtle: #f9fafb;
+  --surface-muted: #f3f4f6;
+  --fg: #111827;
+  --fg-secondary: #374151;
+  --fg-muted: #6b7280;
+  --line: #e5e7eb;
+  --line-strong: #d1d5db;
+  --brand: #2563eb;
+  --brand-fg: #1d4ed8;
+  --shadow-float: 0 1px 2px #1018281a, 0 4px 10px #1018281a, 0 16px 32px -8px #10182824;
+  --shadow-strip: 0 1px 2px #1018280d, 0 2px 6px -2px #10182814;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-subtle: var(--surface-subtle);
+  --color-surface-muted: var(--surface-muted);
+  --color-fg: var(--fg);
+  --color-fg-secondary: var(--fg-secondary);
+  --color-fg-muted: var(--fg-muted);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-brand: var(--brand);
+  --color-brand-fg: var(--brand-fg);
+  --shadow-float: var(--shadow-float);
+  --shadow-strip: var(--shadow-strip);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--surface);
+  color: var(--fg);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
 }

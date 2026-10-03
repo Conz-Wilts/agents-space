@@ -1,0 +1,172 @@
+// Agents Space database (Supabase Postgres). Client is generated into src/generated/prisma.
+// Domain types stay in src/schema.ts (zod); src/store/prisma.ts maps rows to them.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum AgentKind {
+  hosted
+  external
+}
+
+enum Visibility {
+  public
+  private
+}
+
+enum AgentStatus {
+  draft
+  published
+}
+
+enum Protocol {
+  mcp
+  a2a
+  api
+  web
+}
+
+enum Pricing {
+  free
+  usage
+  subscription
+  contact
+}
+
+enum AccessStatus {
+  pending
+  approved
+  denied
+}
+
+model User {
+  id        String   @id @default(uuid())
+  handle    String   @unique
+  /// sha256 of the API key; the key itself is shown once and never stored.
+  keyHash   String   @unique
+  createdAt DateTime @default(now())
+
+  agents         Agent[]
+  connectors     Connector[]
+  accessRequests AccessRequest[]
+}
+
+model Agent {
+  id           String      @id
+  name         String
+  tagline      String
+  description  String
+  solves       String[]
+  tools        String[]
+  category     String
+  endpoint     String?
+  protocol     Protocol    @default(mcp)
+  owner        String
+  pricing      Pricing     @default(free)
+  kind         AgentKind   @default(external)
+  visibility   Visibility  @default(public)
+  status       AgentStatus @default(published)
+  instructions String      @default("")
+  createdAt    DateTime    @default(now())
+
+  ownerId   String?
+  ownerUser User?   @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+
+  notes          ContextNote[]
+  connectors     AgentConnector[]
+  accessRequests AccessRequest[]
+
+  @@index([status])
+  @@index([ownerId])
+}
+
+/// Knowledge an agent carries (menu, policies, FAQ). Included in its skill.
+model ContextNote {
+  agentId   String
+  slug      String
+  title     String
+  body      String
+  updatedAt DateTime @updatedAt
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@id([agentId, slug])
+}
+
+/// A connection to an external system. Actions are declarative (see ConnectorActionSchema).
+model Connector {
+  /// `<owner handle>-<name>`
+  name        String   @id
+  title       String
+  description String
+  hosts       String[]
+  /// Secret NAMES the actions reference. Values live encrypted in ConnectorSecret.
+  secrets     String[]
+  actions     Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  ownerId String
+  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  secretValues ConnectorSecret[]
+  agents       AgentConnector[]
+
+  @@index([ownerId])
+}
+
+/// AES-256-GCM ciphertext (key: CONNECTOR_SECRETS_KEY). Never returned to callers.
+model ConnectorSecret {
+  connectorName String
+  name          String
+  ciphertext    String
+  updatedAt     DateTime @updatedAt
+
+  connector Connector @relation(fields: [connectorName], references: [name], onDelete: Cascade)
+
+  @@id([connectorName, name])
+}
+
+/// Scope: which connector an agent may use, and which actions (empty = all).
+model AgentConnector {
+  agentId       String
+  connectorName String
+  actions       String[]
+
+  agent     Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  connector Connector @relation(fields: [connectorName], references: [name], onDelete: Cascade)
+
+  @@id([agentId, connectorName])
+}
+
+model AccessRequest {
+  id        String       @id @default(uuid())
+  message   String       @default("")
+  status    AccessStatus @default(pending)
+  createdAt DateTime     @default(now())
+  decidedAt DateTime?
+
+  agentId     String
+  agent       Agent  @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  requesterId String
+  requester   User   @relation(fields: [requesterId], references: [id], onDelete: Cascade)
+
+  @@index([agentId])
+  @@index([requesterId])
+}
+
+model Bottleneck {
+  id              String   @id @default(uuid())
+  role            String
+  description     String
+  tools           String[]
+  hoursPerWeek    Float?
+  matchedAgentIds String[]
+  createdAt       DateTime @default(now())
+}
