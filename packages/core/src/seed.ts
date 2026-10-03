@@ -1,8 +1,8 @@
-import type { Agent } from "./schema";
+import { AgentSchema, type Agent } from "./schema";
 
 const t = "2026-10-03T00:00:00.000Z";
 
-export const seedAgents: Agent[] = [
+const raw = [
   {
     id: "inbox-zero",
     name: "Inbox Triage",
@@ -69,3 +69,6 @@ export const seedAgents: Agent[] = [
     createdAt: t,
   },
 ];
+
+/** Example external listings so the directory is not empty on day one. */
+export const seedAgents: Agent[] = raw.map((a) => AgentSchema.parse(a));

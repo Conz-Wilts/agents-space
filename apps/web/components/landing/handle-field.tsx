@@ -49,7 +49,7 @@ export function HandleField({ id }: { id: string }) {
     <form
       action="#"
       onSubmit={(e) => e.preventDefault()}
-      className="group flex w-full max-w-[520px] items-center justify-between gap-2 rounded-xl bg-surface p-1.5 outline outline-1 -outline-offset-1 outline-line transition-[outline-color,box-shadow] duration-300 focus-within:shadow-[0_0_0_4px_#0a0a0a14] focus-within:outline-ink"
+      className="group flex w-full max-w-[520px] items-center justify-between gap-2 rounded-xl bg-panel p-1.5 outline outline-1 -outline-offset-1 outline-edge transition-[outline-color,box-shadow] duration-300 focus-within:shadow-[0_0_0_4px_#0a0a0a14] focus-within:outline-ink"
     >
       <label htmlFor={id} className="relative flex min-w-0 flex-1 items-center pl-3.5 pr-1.5 font-mono text-base">
         <span className="shrink-0 text-muted">agentspace.me/</span>

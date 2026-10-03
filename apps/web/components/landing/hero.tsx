@@ -53,7 +53,7 @@ function SpaceSaid({ children, status }: { children: ReactNode; status?: string 
       <Label>Emma’s space</Label>
       <p className="text-[17px] leading-[25px] text-ink">{children}</p>
       {status && (
-        <span className="mt-1 flex items-center gap-2 rounded-full px-2.5 py-1.5 outline outline-1 -outline-offset-1 outline-line">
+        <span className="mt-1 flex items-center gap-2 rounded-full px-2.5 py-1.5 outline outline-1 -outline-offset-1 outline-edge">
           <span className="size-[7px] rounded-full bg-ink" />
           <span className="font-mono text-[14px] text-ink">{status}</span>
         </span>
@@ -83,8 +83,8 @@ export function Hero() {
       </div>
 
       <div className="flex w-full min-w-0 flex-1 flex-col items-end gap-4">
-        <div className="w-full overflow-hidden rounded-2xl bg-surface outline outline-1 -outline-offset-1 outline-line">
-          <div className="flex flex-col gap-2 border-b border-line px-6 py-4">
+        <div className="w-full overflow-hidden rounded-2xl bg-panel outline outline-1 -outline-offset-1 outline-edge">
+          <div className="flex flex-col gap-2 border-b border-edge px-6 py-4">
             <div className="flex items-center gap-2.5">
               <span className="size-2 rounded-full bg-ink" />
               <span className="font-mono text-[14px] text-ink">agentspace.me/emma</span>
@@ -142,15 +142,15 @@ const STEPS: { label: string; time?: string; state: "done" | "waiting" | "todo";
 
 export function Problem() {
   return (
-    <section className="flex flex-col-reverse items-center gap-14 border-t border-line px-5 py-20 sm:px-10 lg:flex-row lg:gap-24 lg:px-20 lg:py-[120px]">
-      <div className="w-full rounded-2xl bg-surface py-2 outline outline-1 -outline-offset-1 outline-line lg:w-[580px] lg:shrink-0">
+    <section className="flex flex-col-reverse items-center gap-14 border-t border-edge px-5 py-20 sm:px-10 lg:flex-row lg:gap-24 lg:px-20 lg:py-[120px]">
+      <div className="w-full rounded-2xl bg-panel py-2 outline outline-1 -outline-offset-1 outline-edge lg:w-[580px] lg:shrink-0">
         <div className="flex flex-col gap-1.5 px-6 pt-4 pb-5">
           <Label>Chris’s agent · Renewals</Label>
           <p className="text-[20px] font-medium text-ink">Reply to Acme’s renewal request</p>
         </div>
         <ul>
           {STEPS.map((s) => (
-            <li key={s.label} className="flex items-center gap-3.5 border-t border-line px-6 py-3.5">
+            <li key={s.label} className="flex items-center gap-3.5 border-t border-edge px-6 py-3.5">
               {s.state === "done" && (
                 <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-ink text-white">
                   <CheckIcon className="size-3" strokeWidth={3} />
@@ -158,7 +158,7 @@ export function Problem() {
               )}
               {s.state === "waiting" && <ClockIcon className="size-5 shrink-0 text-ink" />}
               {s.state === "todo" && (
-                <span className="size-5 shrink-0 rounded-full outline outline-[1.5px] -outline-offset-1 outline-line" />
+                <span className="size-5 shrink-0 rounded-full outline outline-[1.5px] -outline-offset-1 outline-edge" />
               )}
               <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
                 <span className={`text-base ${s.state === "todo" ? "text-muted" : "text-ink"} ${s.who ? "font-medium" : ""}`}>

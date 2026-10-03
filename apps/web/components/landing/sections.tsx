@@ -34,7 +34,7 @@ const STORIES: { title: string; person: string; quote: string; knows: string[]; 
     knows: ["Pricing and discount policy", "This quarter’s priorities", "“Anything over $50k comes to me”"],
     artifact: (
       <>
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-6 py-[18px]">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-edge px-6 py-[18px]">
           <Label>Example requests</Label>
           <span className="font-mono text-[13px] text-ink">Within the rules, or sent to David</span>
         </div>
@@ -43,7 +43,7 @@ const STORIES: { title: string; person: string; quote: string; knows: string[]; 
           ["Is the EU launch still Q4?", "Yes — 18 Nov, per Monday’s plan.", true],
           ["Can we sponsor DevConf for $60k?", "Over $50k — sent to David.", false],
         ].map(([q, a, ok]) => (
-          <div key={q as string} className="flex gap-3 border-b border-line px-6 py-3.5 last:border-b-0">
+          <div key={q as string} className="flex gap-3 border-b border-edge px-6 py-3.5 last:border-b-0">
             <span className="flex h-[22px] items-center">
               <span className={`size-[7px] rounded-full ${ok ? "bg-ink" : "bg-wait"}`} />
             </span>
@@ -64,7 +64,7 @@ const STORIES: { title: string; person: string; quote: string; knows: string[]; 
     knows: ["Live tables and opening hours", "Menu, allergens, corkage", "“Groups of 6+ leave a deposit”"],
     artifact: (
       <>
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-6 py-[18px]">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-edge px-6 py-[18px]">
           <Label className="text-ink">Reservation confirmed</Label>
           <Label>Example booking</Label>
         </div>
@@ -84,7 +84,7 @@ const STORIES: { title: string; person: string; quote: string; knows: string[]; 
               </div>
             ))}
           </dl>
-          <div className="flex gap-2.5 rounded-lg bg-surface px-3.5 py-3">
+          <div className="flex gap-2.5 rounded-lg bg-panel px-3.5 py-3">
             <ChefHatIcon className="mt-0.5 size-[18px] shrink-0 text-muted" strokeWidth={1.75} />
             <p className="flex-1 text-[15px] leading-[22px] text-muted">Window table requested. Added to the booking.</p>
           </div>
@@ -96,7 +96,7 @@ const STORIES: { title: string; person: string; quote: string; knows: string[]; 
 
 export function Stories() {
   return (
-    <section id="stories" className="flex flex-col gap-16 border-t border-line bg-surface px-5 pt-20 pb-16 sm:px-10 lg:px-20 lg:pt-[120px] lg:pb-20">
+    <section id="stories" className="flex flex-col gap-16 border-t border-edge bg-panel px-5 pt-20 pb-16 sm:px-10 lg:px-20 lg:pt-[120px] lg:pb-20">
       <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
         <SectionTitle eyebrow="Everyday examples" className="lg:w-[880px]">
           If people wait on you, <br className="hidden sm:inline" />
@@ -106,7 +106,7 @@ export function Stories() {
       </div>
       <ol>
         {STORIES.map((s, i) => (
-          <li key={s.title} className="flex flex-col gap-8 border-t border-line py-12 lg:flex-row lg:gap-14">
+          <li key={s.title} className="flex flex-col gap-8 border-t border-edge py-12 lg:flex-row lg:gap-14">
             <div className="flex flex-col gap-2.5 lg:w-[260px] lg:shrink-0">
               <span className="font-mono text-[13px] tracking-[1px] text-ink">{String(i + 1).padStart(2, "0")}</span>
               <h3 className="text-[34px] leading-9 font-medium tracking-[-1.4px] text-ink">{s.title}</h3>
@@ -129,7 +129,7 @@ export function Stories() {
               </div>
             </div>
             <div className="min-w-0 flex-1">
-              <div className="rounded-[14px] bg-white outline outline-1 -outline-offset-1 outline-line">{s.artifact}</div>
+              <div className="rounded-[14px] bg-white outline outline-1 -outline-offset-1 outline-edge">{s.artifact}</div>
             </div>
           </li>
         ))}
@@ -178,7 +178,7 @@ export function Rules() {
       <div className="rounded-2xl outline outline-1 -outline-offset-1 outline-dark-line">
         <div className="flex items-center justify-between gap-4 border-b border-dark-line px-5 py-[18px] sm:px-7">
           <span className="flex min-w-0 items-center gap-2.5">
-            <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-line text-[13px] font-semibold text-ink">D</span>
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-edge text-[13px] font-semibold text-ink">D</span>
             <span className="truncate font-mono text-[14px] text-white">agentspace.me/david</span>
           </span>
           <Label className="text-dark-muted">Example rules</Label>
@@ -224,7 +224,7 @@ const SETUP: { title: string; body: string; detail: ReactNode }[] = [
     detail: (
       <div className="grid w-fit grid-cols-[auto_auto] justify-items-start gap-2">
         {["Calendar", "Documents", "Email", "Team knowledge"].map((s) => (
-          <span key={s} className="rounded-full px-3 py-[7px] text-[14px] text-ink outline outline-1 -outline-offset-1 outline-line">
+          <span key={s} className="rounded-full px-3 py-[7px] text-[14px] text-ink outline outline-1 -outline-offset-1 outline-edge">
             {s}
           </span>
         ))}
@@ -235,7 +235,7 @@ const SETUP: { title: string; body: string; detail: ReactNode }[] = [
     title: "Draw the lines",
     body: "Say what it can answer alone, what it should ask you about, and what it never touches. In plain words, not settings.",
     detail: (
-      <div className="flex gap-2.5 rounded-[10px] bg-surface px-3.5 py-3 outline outline-1 -outline-offset-1 outline-line">
+      <div className="flex gap-2.5 rounded-[10px] bg-panel px-3.5 py-3 outline outline-1 -outline-offset-1 outline-edge">
         <CornerDownRightIcon className="mt-0.5 size-4 shrink-0 text-muted" />
         <p className="flex-1 text-[15px] leading-[21px] text-ink">“If it’s about money over $50k, ask me first.”</p>
       </div>
@@ -260,7 +260,7 @@ export function HowItWorks() {
         <SectionTitle eyebrow="How it works" className="lg:w-[700px]">
           Set it up once. Stop answering the same thing twice.
         </SectionTitle>
-        <div className="flex flex-col gap-2 border-l-2 border-line py-1 pl-5 lg:w-[380px]">
+        <div className="flex flex-col gap-2 border-l-2 border-edge py-1 pl-5 lg:w-[380px]">
           <p className="text-[15px] font-medium text-ink">Wait, what’s an MCP?</p>
           <p className="text-[15px] leading-[23px] text-muted">
             MCP is a standard for connecting AI agents to tools. Your space exposes only the information and actions you
@@ -284,7 +284,7 @@ export function HowItWorks() {
 
 export function FinalCta() {
   return (
-    <section className="flex flex-col items-center gap-10 border-t border-line bg-surface px-5 pt-24 pb-24 text-center sm:px-10 lg:px-20 lg:pt-32 lg:pb-[136px]">
+    <section className="flex flex-col items-center gap-10 border-t border-edge bg-panel px-5 pt-24 pb-24 text-center sm:px-10 lg:px-20 lg:pt-32 lg:pb-[136px]">
       <h2 className="text-[40px] leading-[1.02] font-medium tracking-[-1.6px] text-ink sm:text-[56px] lg:text-[80px] lg:leading-[80px] lg:tracking-[-3.2px]">
         The next agent that needs you <br className="hidden md:inline" />
         shouldn’t have to wait.
@@ -307,7 +307,7 @@ const FOOTER_LINKS = [
 
 export function Footer() {
   return (
-    <footer className="flex flex-col gap-6 border-t border-line px-5 py-8 sm:px-10 lg:flex-row lg:items-center lg:justify-between lg:px-20">
+    <footer className="flex flex-col gap-6 border-t border-edge px-5 py-8 sm:px-10 lg:flex-row lg:items-center lg:justify-between lg:px-20">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-6">
         <Logo small />
         <p className="text-[14px] text-muted">© 2026 Agent Space. Made for the people everything waits on.</p>
