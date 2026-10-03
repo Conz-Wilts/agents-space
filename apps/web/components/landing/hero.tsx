@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { getSessionUser } from "@/lib/supabase/server";
 import { CheckIcon } from "./icons";
 import { HandleField, Label, Logo, Mark, d } from "./primitives";
 
@@ -10,7 +11,8 @@ const NAV = [
   ["Directory", "/directory"],
 ] as const;
 
-export function Nav() {
+export async function Nav() {
+  const user = await getSessionUser();
   return (
     <header data-animate className="nav-bar sticky top-0 z-50">
       <div className="flex items-center justify-between px-5 py-5 sm:px-10 lg:px-20 lg:py-6">
@@ -30,8 +32,8 @@ export function Nav() {
           ))}
         </nav>
         <div className="r flex items-center gap-6" style={d(320)}>
-          <Link href="#" className="hidden text-[15px] text-ink sm:inline">
-            Sign in
+          <Link href={user ? "/account" : "/login"} className="hidden text-[15px] text-ink sm:inline">
+            {user ? `@${user.handle}` : "Sign in"}
           </Link>
           <Link
             href="#claim"

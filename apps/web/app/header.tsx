@@ -20,16 +20,9 @@ export async function SiteHeader() {
         >
           Connect
         </a>
-        {user ? (
+        {user && (
           <Link href="/account" title={`@${user.handle}`} className="rounded-full hover:opacity-80">
             <Avatar name={user.handle} size={32} />
-          </Link>
-        ) : (
-          <Link
-            href="/login"
-            className="flex h-8 items-center rounded-full border border-line px-3 text-xs font-medium text-fg-secondary hover:border-line-strong hover:text-fg"
-          >
-            Sign in
           </Link>
         )}
       </div>
