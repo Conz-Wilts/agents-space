@@ -26,6 +26,8 @@
     "public/tables/TableRow.sql",
     "public/tables/AgentSchedule.sql",
     "public/tables/AiModel.sql",
+    "public/tables/Price.sql",
+    "public/tables/Payment.sql",
     "public/default_privileges.sql"
   ],
   "profile": "supabase",
