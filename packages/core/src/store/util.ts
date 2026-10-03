@@ -19,6 +19,21 @@ export const RESERVED_HANDLES = new Set([
 /** Category of a person's or business's space (the hosted agent at `/<handle>/mcp`). */
 export const SPACE_CATEGORY = "Space";
 
+/**
+ * A space's status for a viewer, with hasAccess/canSeeInfo semantics: owner and public are "open";
+ * published listed/restricted are "open" if approved, else "request access"; drafts and private are undefined.
+ */
+export function spaceStatus(
+  a: { ownerId?: string | null; status: string; visibility: string },
+  viewerId: string | undefined,
+  approved: boolean,
+): "open" | "request access" | undefined {
+  if (viewerId && a.ownerId === viewerId) return "open";
+  if (a.status !== "published" || a.visibility === "private") return undefined;
+  if (a.visibility === "public" || approved) return "open";
+  return "request access";
+}
+
 export const newApiKey = () => `as_${randomBytes(24).toString("base64url")}`;
 
 /** Handle candidates for a new web sign-in: from the name or email, then with random suffixes. */

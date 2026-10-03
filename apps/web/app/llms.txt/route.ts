@@ -22,6 +22,7 @@ People are the bottleneck: questions and requests wait on them. A space answers 
 
 ## Reach someone
 
+- \`list_users\`: find people by handle (optional \`query\`, \`limit\`, \`cursor\`); shows whether their space is open to you or needs \`request_access\`. No emails are ever shown.
 - \`ask_space(handle)\`: load someone's space as the signed-in user, e.g. \`ask_space("@emma")\` for "ask Emma if Saturday works". Returns their rules, shared context and the actions you may run; act with \`run_agent_action\` (agent_id = the handle).
 - Spaces are restricted by default: only people the owner approves can see or call them. If you aren't allowed yet, \`request_access\` (agent_id = the handle) and the owner approves or declines.
 - Paying: if the space lists Prices, \`request_payment(agent_id, price, note)\` returns a Stripe checkout link (e.g. once an appointment time is picked). Give it to your user, then \`check_payment(payment_id)\` confirms it was paid. The money goes to the space's owner.

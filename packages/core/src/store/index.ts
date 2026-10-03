@@ -16,6 +16,7 @@ import type {
   User,
 } from "../schema";
 export type RowQuery = { where?: Record<string, unknown>; createdBy?: string; limit?: number; offset?: number; order?: "asc" | "desc" };
+export type SpaceStatus = "open" | "request access";
 /** A verified Supabase Auth identity. */
 export type AuthIdentity = { authId: string; email?: string; name?: string };
 
@@ -74,6 +75,14 @@ export interface Store {
   setHandle(userId: string, handle: string): Promise<User>;
   /** The account linked to a Supabase Auth user, created (handle derived from name/email) on first sign-in. */
   userForAuth(auth: AuthIdentity): Promise<User>;
+  /** Users by handle ascending (stable), optionally handles containing `query` (case-insensitive), after `cursor` (the last handle of the previous page). */
+  listUsers(opts: { query?: string; limit: number; cursor?: string }): Promise<User[]>;
+  /**
+   * What `viewerId` can do with each user's space (hosted agent, id = handle, category Space), in one batch.
+   * Same rules as hasAccess/canSeeInfo: "open" = may use it; "request access" = published listed/restricted, not approved.
+   * Users with no space, a draft, or a private one (not the viewer's own) are absent.
+   */
+  spaceStatuses(users: Pick<User, "id" | "handle">[], viewerId?: string): Promise<Map<string, SpaceStatus>>;
   /** Issues a new API key (shown once), revoking the previous one. */
   rotateApiKey(userId: string): Promise<string>;
 

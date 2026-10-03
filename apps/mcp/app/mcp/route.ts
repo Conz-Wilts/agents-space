@@ -603,6 +603,39 @@ const handler = createMcpHandler(
       }),
     );
 
+    server.registerTool(
+      "list_users",
+      {
+        title: "List people",
+        description:
+          "Find people and businesses on Agents Space by handle: who they are, when they joined, and whether their space is open to you or needs a request. Anyone can call it. Then reach one with ask_space.",
+        inputSchema: z.object({
+          query: z.string().optional().describe("Part of a handle, case-insensitive"),
+          limit: z.number().int().min(1).max(100).default(25),
+          cursor: z.string().optional().describe("The cursor from the previous page"),
+        }),
+      },
+      safe(async ({ query, limit, cursor }, ctx) => {
+        const viewer = await currentUser(ctx);
+        const q = query ? plainHandle(query) : undefined;
+        const found = await store.listUsers({ query: q || undefined, limit: limit + 1, cursor });
+        const page = found.slice(0, limit);
+        const statuses = await store.spaceStatuses(page, viewer?.id);
+        const lines = page.map((u) => {
+          const s = statuses.get(u.handle);
+          return `• @${u.handle} — joined ${u.createdAt.slice(0, 10)}${s ? ` · ${s}` : ""}`;
+        });
+        if (!lines.length) return text("No matching people.");
+        const hints = [
+          [...statuses.values()].includes("open") && 'open: ask_space("<handle>")',
+          [...statuses.values()].includes("request access") && 'request access: request_access("<handle>")',
+        ].filter(Boolean);
+        return text(
+          [lines.join("\n"), hints.length ? `\n${hints.join(" · ")}` : "", found.length > limit ? `\nMore: call list_users again with cursor "${page[page.length - 1].handle}".` : ""].join(""),
+        );
+      }),
+    );
+
     /* ───────────── access ───────────── */
 
     server.registerTool(
@@ -1159,7 +1192,7 @@ const handler = createMcpHandler(
   {
     serverInfo: { name: "agents-space", version: "0.2.0" },
     instructions:
-      "Agents Space gives people and businesses a space: their own MCP address that other people's agents call instead of waiting on them. To reach someone (\"ask emma if Saturday works\", \"check @marcos-trattoria for a table\"), call ask_space with their handle. If the user just connected, call my_space first (claim_space if they have none) and help them set it up; allow_access / revoke_access / list_access manage who can use it; enable_payments + set_price let it charge callers. When a space lists Prices, request_payment returns a Stripe checkout link for your user and check_payment confirms it. Agents Space is also a directory of agents as shareable skills. Find agents (describe_bottleneck, search_agents), use them (use_agent, run_agent_action), request access to ones that need approval (request_access), or build your own in natural language (prompt build_agent, or create_agent → add_context_note → create_table → create_connector or connect_app → attach_connector → test_agent → publish_agent). Agents keep their own data in tables (create_table; built-in 'outputs'); no connector is needed to store data. An agent is either a skill other people's agents call (mode skill) or works for its owner on a schedule (mode scheduled → schedule_agent, run_schedule_now, schedule_runs); add_model / set_agent_model pick the LLM it runs on.",
+      "Agents Space gives people and businesses a space: their own MCP address that other people's agents call instead of waiting on them. To reach someone (\"ask emma if Saturday works\", \"check @marcos-trattoria for a table\"), call ask_space with their handle. If the user just connected, call my_space first (claim_space if they have none) and help them set it up; allow_access / revoke_access / list_access manage who can use it; enable_payments + set_price let it charge callers. When a space lists Prices, request_payment returns a Stripe checkout link for your user and check_payment confirms it. Agents Space is also a directory of agents as shareable skills. Find people with list_users. Find agents (describe_bottleneck, search_agents), use them (use_agent, run_agent_action), request access to ones that need approval (request_access), or build your own in natural language (prompt build_agent, or create_agent → add_context_note → create_table → create_connector or connect_app → attach_connector → test_agent → publish_agent). Agents keep their own data in tables (create_table; built-in 'outputs'); no connector is needed to store data. An agent is either a skill other people's agents call (mode skill) or works for its owner on a schedule (mode scheduled → schedule_agent, run_schedule_now, schedule_runs); add_model / set_agent_model pick the LLM it runs on.",
   },
 );
 

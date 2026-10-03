@@ -1,7 +1,7 @@
 import { matchAgents } from "../match";
 import { AgentSchema, type Agent, type AccessRequest, type AgentSchedule, type Bottleneck, type Connector, type ContextNote, type DataTable, type DeviceLogin, type Model, type Payment, type Price, type TableRow, type User } from "../schema";
 import type { Store } from "./index";
-import { DEVICE_LOGIN_TTL_MS, RESERVED_HANDLES, handleCandidates, hashKey, newApiKey, newDeviceCode, newUserCode, normalizeHandle, normalizeUserCode, slug } from "./util";
+import { DEVICE_LOGIN_TTL_MS, RESERVED_HANDLES, handleCandidates, hashKey, newApiKey, newDeviceCode, newUserCode, normalizeHandle, normalizeUserCode, SPACE_CATEGORY, slug, spaceStatus } from "./util";
 
 const now = () => new Date().toISOString();
 
@@ -204,6 +204,23 @@ export function createMemoryStore(): Store {
       const user: User = { id: crypto.randomUUID(), handle, authId, email, createdAt: now() };
       users.push(user);
       return user;
+    },
+    async listUsers({ query, limit, cursor }) {
+      const q = query?.toLowerCase();
+      return users
+        .filter((u) => (!q || u.handle.includes(q)) && (!cursor || u.handle > cursor))
+        .sort((a, b) => (a.handle < b.handle ? -1 : a.handle > b.handle ? 1 : 0))
+        .slice(0, limit);
+    },
+    async spaceStatuses(list, viewerId) {
+      const out = new Map<string, "open" | "request access">();
+      for (const u of list) {
+        const a = agents.find((x) => x.id === u.handle);
+        if (!a || a.ownerId !== u.id || a.kind !== "hosted" || a.category !== SPACE_CATEGORY) continue;
+        const s = spaceStatus(a, viewerId, approved(a.id, viewerId));
+        if (s) out.set(u.handle, s);
+      }
+      return out;
     },
     rotateApiKey,
 

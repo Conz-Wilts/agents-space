@@ -3,7 +3,7 @@ import { Prisma, PrismaClient } from "../generated/prisma/client";
 import { matchAgents } from "../match";
 import { ModelSchema, AgentSchema, AgentScheduleSchema, CallerAccessSchema, ConnectorActionSchema, TableColumnSchema, type AccessRequest, type Agent, type AgentSchedule, type Bottleneck, type Connector, type ContextNote, type DataTable, type DeviceLogin, type Model, type Payment, type Price, type TableRow, type User } from "../schema";
 import type { Store } from "./index";
-import { DEVICE_LOGIN_TTL_MS, RESERVED_HANDLES, handleCandidates, hashKey, newApiKey, newDeviceCode, newUserCode, normalizeHandle, normalizeUserCode, slug } from "./util";
+import { DEVICE_LOGIN_TTL_MS, RESERVED_HANDLES, handleCandidates, hashKey, newApiKey, newDeviceCode, newUserCode, normalizeHandle, normalizeUserCode, SPACE_CATEGORY, slug, spaceStatus } from "./util";
 
 const agentInclude = { connectors: true } satisfies Prisma.AgentInclude;
 type AgentRow = Prisma.AgentGetPayload<{ include: typeof agentInclude }>;
@@ -358,6 +358,34 @@ export function createPrismaStore(connectionString: string): Store {
         }
       }
       throw new Error("Could not pick a free handle.");
+    },
+    async listUsers({ query, limit, cursor }) {
+      const rows = await db.user.findMany({
+        where: { handle: { ...(query ? { contains: query, mode: "insensitive" as const } : {}), ...(cursor ? { gt: cursor } : {}) } },
+        orderBy: { handle: "asc" },
+        take: limit,
+      });
+      return rows.map(toUser);
+    },
+    async spaceStatuses(list, viewerId) {
+      const out = new Map<string, "open" | "request access">();
+      if (!list.length) return out;
+      const rows = await db.agent.findMany({
+        where: { id: { in: list.map((u) => u.handle) }, kind: "hosted", category: SPACE_CATEGORY },
+        select: { id: true, ownerId: true, status: true, visibility: true },
+      });
+      const owners = new Map(list.map((u) => [u.handle, u.id]));
+      const spaces = rows.filter((a) => a.ownerId === owners.get(a.id));
+      const approvedIds = new Set(
+        viewerId && spaces.length
+          ? (await db.accessRequest.findMany({ where: { requesterId: viewerId, status: "approved", agentId: { in: spaces.map((a) => a.id) } }, select: { agentId: true } })).map((r) => r.agentId)
+          : [],
+      );
+      for (const a of spaces) {
+        const s = spaceStatus(a, viewerId, approvedIds.has(a.id));
+        if (s) out.set(a.id, s);
+      }
+      return out;
     },
     rotateApiKey,
 
