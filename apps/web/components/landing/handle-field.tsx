@@ -68,11 +68,18 @@ export function HandleField({ id }: { id: string }) {
     <div className="flex w-full max-w-[520px] flex-col gap-3 text-left">
       <form
         onSubmit={submit}
-        className="group flex w-full items-center justify-between gap-2 rounded-xl bg-panel p-1.5 outline outline-1 -outline-offset-1 outline-edge transition-[outline-color,box-shadow] duration-300 focus-within:shadow-[0_0_0_4px_#0a0a0a14] focus-within:outline-ink"
+        // The whole box reads as one field: a click on its padding focuses the input.
+        onMouseDown={(e) => {
+          if (e.target === e.currentTarget) {
+            e.preventDefault();
+            document.getElementById(id)?.focus();
+          }
+        }}
+        className="group flex w-full cursor-text items-center justify-between gap-2 rounded-xl bg-panel p-1.5 outline outline-1 -outline-offset-1 outline-edge transition-[outline-color,box-shadow] duration-300 focus-within:shadow-[0_0_0_4px_#0a0a0a14] focus-within:outline-ink"
       >
-        <label htmlFor={id} className="relative flex min-w-0 flex-1 items-center pl-3.5 pr-1.5 font-mono text-base">
+        <label htmlFor={id} className="relative flex min-w-0 flex-1 cursor-text items-center self-stretch pl-3.5 pr-1.5 font-mono text-base">
           <span className="shrink-0 text-muted">agentspace.me/</span>
-          <span className="relative min-w-0 flex-1">
+          <span className="relative min-w-0 flex-1 self-stretch">
             <input
               id={id}
               name="handle"
@@ -83,11 +90,12 @@ export function HandleField({ id }: { id: string }) {
               }}
               onFocus={() => setFocused(true)}
               onBlur={() => setFocused(false)}
+              placeholder={focused ? HANDLES[0] : ""}
               autoComplete="off"
               spellCheck={false}
               aria-label="Choose your handle"
               aria-describedby={`${id}-status`}
-              className="w-full min-w-0 bg-transparent text-ink caret-ink outline-none"
+              className="h-full w-full min-w-0 bg-transparent text-ink caret-ink outline-none placeholder:text-muted"
             />
             {!value && !focused && (
               <span aria-hidden className="pointer-events-none absolute inset-y-0 left-0 flex items-center text-ink">
