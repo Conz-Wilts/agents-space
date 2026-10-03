@@ -389,6 +389,7 @@ export function FinalCta() {
 
 const FOOTER_LINKS = [
   ["Directory", "/directory"],
+  ["For agents", "/llms.txt"],
   ["Privacy", "#"],
   ["Security", "#"],
   ["X / Twitter", "#"],
@@ -404,11 +405,18 @@ export function Footer() {
         <p className="text-[14px] text-muted">© 2026 Agent Space. Made for the people everything waits on.</p>
       </div>
       <nav className="flex flex-wrap gap-7">
-        {FOOTER_LINKS.map(([label, href]) => (
-          <Link key={label} href={href} className="text-[14px] text-muted transition-colors hover:text-ink">
-            {label}
-          </Link>
-        ))}
+        {FOOTER_LINKS.map(([label, href]) =>
+          // A plain link for files like /llms.txt: next/link would prefetch them as pages.
+          href.includes(".") ? (
+            <a key={label} href={href} className="text-[14px] text-muted transition-colors hover:text-ink">
+              {label}
+            </a>
+          ) : (
+            <Link key={label} href={href} className="text-[14px] text-muted transition-colors hover:text-ink">
+              {label}
+            </Link>
+          ),
+        )}
       </nav>
     </footer>
   );
