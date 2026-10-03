@@ -25,6 +25,8 @@ _Last updated: 2026-10-03_
 - [x] Sign-in `redirectTo` is the bare `/auth/callback`; `next` rides in an `auth_next` cookie so Supabase's exact allowlist match works
 - [x] Landing motion: scroll reveals, hero conversation plays out, task log checks off, network lines draw + packets flow, typed handle field, sticky frosted nav, spotlight on dark sections; reduced-motion safe
 
+- [x] Claim your space: landing form checks the handle (`/api/handles/<h>`) and shows the MCP install command with `?claim=<handle>` (Claude Code via `npx agents-space login --claim <handle>`, Claude / Cursor / VS Code via the URL). The first signed-in (Google) request claims it: handle set, private space created at `/<handle>/mcp`. Also `claim_space` / `my_space` tools. Tested end to end locally against the Supabase DB (2026-10-03): device login → auto-claim of `scarranca` → `my_space`, handle lock, availability, unlisted, `/scarranca/mcp` 401 anonymous / works for owner. The npm `agents-space` CLI (0.1.0) needs a new publish for `--claim`
+
 ## Next
 - [ ] Create the Supabase project, set `DATABASE_URL` / `DIRECT_URL` / `CONNECTOR_SECRETS_KEY` (local + Vercel), `pnpm db:push && pnpm db:seed` — switch to `db:migrate` migrations before real users
 - [x] `apps/web` deployed: Vercel project `agents-space-web` (team SUPAYAPPERS, root dir `apps/web`, prod env set) → https://agents-space-web.vercel.app; MCP on `agents-space-mcp` → https://agents-space-mcp.vercel.app (CLI deploys, no git integration yet)
@@ -36,8 +38,10 @@ _Last updated: 2026-10-03_
 - [ ] Per-caller usage/metering; let owners revoke an approved grant
 
 ## Known gaps
-- Landing "Claim your space" handle form has no backend; "Sign in", Privacy, Security, X links are `#` placeholders.
-- Landing copy positions Agent Space as personal "spaces" agents can call (agentspace.me/handle) — `context.md` still describes the bottleneck→agent directory; reconcile.
+- Privacy, Security, X links on the landing are `#` placeholders.
+- No web (non-MCP) claim path yet: someone who won't install an MCP can't claim a space from the site.
+- `update_agent` can change a space's category, which makes it stop being a space.
+- "Ask me first" from the landing page isn't built: a space can't yet send a request to its owner for a decision and resume after they answer. Today it only answers within its instructions and scoped actions, or refuses.
 - Without `DATABASE_URL` the store is in-memory and not shared between deployments.
 - Private-host blocking checks the hostname only (no DNS resolution), so DNS rebinding to internal IPs isn't prevented.
 - Connector actions can't do OAuth flows or multi-step logic — only single templated requests. Owners paste API keys.

@@ -15,6 +15,7 @@ Sign in to Agents Space and connect it to Claude Code.
 Flags:
   --web <origin>       Agents Space site (default: $AGENTS_SPACE_WEB or ${DEFAULT_WEB})
   --name <name>        MCP server name in Claude Code (default: agents-space)
+  --claim <handle>     Claim this handle for your space when you first use the MCP
   --scope <scope>      user, local or project (default: user)
   --no-open            Never open a browser
   --no-claude          Skip Claude Code registration and print the connect command
@@ -31,6 +32,7 @@ function parseArgs(argv) {
     open: true,
     claude: true,
     claudeBin: "claude",
+    claim: undefined,
   };
   const args = [...argv];
   if (args[0] === "login") args.shift();
@@ -45,6 +47,7 @@ function parseArgs(argv) {
     if (a === "--version") return { version: true };
     else if (a === "--web") opts.web = value(a);
     else if (a === "--name") opts.name = value(a);
+    else if (a === "--claim") opts.claim = value(a).toLowerCase();
     else if (a === "--scope") opts.scope = value(a);
     else if (a === "--claude-bin") opts.claudeBin = value(a);
     else if (a === "--no-open") opts.open = false;
@@ -119,9 +122,17 @@ function quote(s) {
   return /^[\w@%+=:,./-]+$/.test(s) ? s : `"${s.replace(/(["\\$`])/g, "\\$1")}"`;
 }
 
+/** The MCP URL, with `?claim=<handle>` so the server claims the space on the first request. */
+function mcpUrl(opts, res) {
+  if (!opts.claim) return res.mcp_url;
+  const url = new URL(res.mcp_url);
+  url.searchParams.set("claim", opts.claim);
+  return url.toString();
+}
+
 function addArgs(opts, res) {
   return [
-    "mcp", "add", "--transport", "http", "-s", opts.scope, opts.name, res.mcp_url,
+    "mcp", "add", "--transport", "http", "-s", opts.scope, opts.name, mcpUrl(opts, res),
     "--header", `Authorization: Bearer ${res.api_key}`,
   ];
 }

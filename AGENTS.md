@@ -2,9 +2,10 @@
 
 Read this before working in the repo. `CLAUDE.md` imports this file; edit this one.
 
-Public directory for agents, delivered **primarily as an MCP server**. Humans tell the MCP
-where *they* are the bottleneck (work that waits on them) and which tools they use; it matches
-them to agents that can take that work off their plate. Builders register agents via the same MCP.
+People and businesses are the bottleneck: work waits on them. Agent Space gives each of them a
+**space**: their own MCP address (`/<handle>/mcp`) that other people's agents call to get answers and
+actions within the rules the owner sets, instead of waiting on the human. Delivered **primarily as an
+MCP server**. The directory is the opt-in discovery layer. See `docs/memory/context.md`.
 Hosted agents are skills: instructions + context notes + scoped connector actions, served over MCP (no agent runtime, no cron). Connector actions are declarative (HTTP templates or remote-MCP calls) and run inside Agents Space. The Next.js site is secondary — a human-facing view of the marketplace.
 
 Built for the Vercel hackathon. Ship fast; keep it simple.
@@ -14,7 +15,7 @@ Built for the Vercel hackathon. Ship fast; keep it simple.
 | Path | What |
 |---|---|
 | `apps/mcp` | **The product.** Next.js app hosting the MCP server at `/mcp` via `mcp-handler` v2 (Streamable HTTP). Port 3001. Tools in `app/mcp/route.ts`. |
-| `apps/web` | Human-facing site. Next.js 16 App Router + Tailwind v4. Port 3000. `/` = landing page, `/directory` = agent directory (Agent Book), `/login` + `/account` + `/oauth/consent` = Supabase sign-in, API keys and MCP OAuth consent, `/device` + `/api/device/{start,poll}` = CLI device login, `/cli.mjs` = the CLI script (copied from `packages/cli` at build), `/api/agents` = public JSON. |
+| `apps/web` | Human-facing site. Next.js 16 App Router + Tailwind v4. Port 3000. `/` = landing page, `/directory` = agent directory (Agent Book), `/login` + `/account` + `/oauth/consent` = Supabase sign-in, API keys and MCP OAuth consent, `/device` + `/api/device/{start,poll}` = CLI device login, `/cli.mjs` = the CLI script (copied from `packages/cli` at build), `/api/agents` = public JSON, `/api/handles/<h>` = handle availability. |
 | `packages/core` | Shared zod schemas (`Agent`, `User`, `Connector`, `AccessRequest`, `Bottleneck`), seed data, matching, `Store` (`store/`: Prisma + in-memory fallback), connector runtime (`connectors.ts`), secret encryption (`secrets.ts`), hosted-agent logic (`agents.ts`). Prisma schema in `prisma/schema.prisma`. Both apps import `@agents-space/core` (TS source, via `transpilePackages`). |
 | `packages/cli` | `agents-space` CLI (zero-dependency, one file). `agents-space login` runs the device flow and registers the MCP server with Claude Code using an API key. Publish to npm to enable `npx agents-space login`. |
 | `docs/memory/` | **Project memory for LLMs.** Read before working, update after decisions. |
@@ -32,20 +33,21 @@ pnpm db:migrate   # DEPRECATED: use `pnpm supabase db schema declarative sync`
 pnpm db:seed      # example listings
 ```
 
-Env: one `.env.local` at the repo root (see `.env.example`): `DATABASE_URL` (Supabase pooled), `DIRECT_URL` (Supabase direct, for the CLI), `CONNECTOR_SECRETS_KEY`, `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (Google sign-in via Supabase Auth). Without `DATABASE_URL` the store is in-memory.
+Env: one `.env.local` at the repo root (see `.env.example`): `DATABASE_URL` (Supabase pooled, port 6543), `DIRECT_URL` (session pooler, port 5432; use the `aws-0-<region>.pooler.supabase.com` host, since `db.<ref>.supabase.co` is IPv6-only), `CONNECTOR_SECRETS_KEY`, `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (Google sign-in via Supabase Auth). Without `DATABASE_URL` the store is in-memory.
 
 Test the MCP: `npx @modelcontextprotocol/inspector` → `http://localhost:3001/mcp`.
 
 ## MCP tools
 Main server `/mcp`. Auth: OAuth — MCP clients sign in with Google through Supabase Auth's OAuth 2.1 server (consent page: web `/oauth/consent`; metadata: `/.well-known/oauth-protected-resource/mcp`) — or an `as_` API key (`Authorization: Bearer` / `?key=`) generated at web `/account`. Sign-in is required when Supabase is configured; otherwise anonymous = read + public use:
 - Account: `create_account`, `whoami`
+- Space: `claim_space` (Google sign-in only; locks the handle), `my_space`. `/mcp?claim=<handle>` (the URL the landing page hands out) claims it on the first signed-in request
 - Discover: `describe_bottleneck`, `search_agents`, `list_agents`, `get_agent`
 - Access: `request_access`, `my_access_requests`, `list_access_requests`, `review_access_request`
 - Build: `create_agent` → `add_context_note` (+ `remove_context_note`) → `create_connector` → `set_connector_secret` → `attach_connector` → `test_agent` → `publish_agent` (+ `update_agent`, `detach_connector`, `unpublish_agent`, `my_agents`, `my_connectors`); prompt `build_agent`
 - Use: `use_agent` (skill text + scoped actions), `run_agent_action`
 - `register_agent` — list an *external* agent
 
-Per-agent server `/a/<id>/mcp`: the shareable link. Public agents work anonymously; private ones send clients through OAuth sign-in. Tools = `instructions` + one per scoped action (`<connector>__<action>`); without access only `request_access`.
+Per-agent server `/a/<id>/mcp`: the shareable link. A space is the same server at `/<handle>/mcp` (hosted agent with `id = handle`, category `Space`; private spaces are unlisted). Public agents work anonymously; private ones send clients through OAuth sign-in. Tools = `instructions` + one per scoped action (`<connector>__<action>`); without access only `request_access`.
 
 ## Rules
 - **Next.js 16 / mcp-handler 2 / MCP SDK v2 / zod 4** — APIs differ from older training data. Check `node_modules/next/dist/docs/` and `node_modules/mcp-handler/README.md` before guessing. `registerTool` takes `inputSchema: z.object(...)` (not a raw shape).
