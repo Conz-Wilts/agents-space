@@ -114,6 +114,8 @@ export interface Store {
 
   /** Link (or unlink, with undefined) the user's Stripe Connect account. */
   setStripeAccount(userId: string, accountId: string | undefined): Promise<User>;
+  /** Public URL of the user's profile icon. */
+  setAvatar(userId: string, url: string): Promise<void>;
 
   listPrices(agentId: string): Promise<Price[]>;
   /** Create or replace the price with this name. */

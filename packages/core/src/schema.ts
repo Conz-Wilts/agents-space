@@ -14,6 +14,8 @@ export const UserSchema = z.object({
   email: z.string().optional(),
   /** Stripe Connect (Express) account that receives this user's payments. */
   stripeAccountId: z.string().optional(),
+  /** Public URL of the profile icon (Google picture copied to the profile icons bucket). */
+  avatarUrl: z.string().optional(),
   createdAt: z.string(),
 });
 export type User = z.infer<typeof UserSchema>;

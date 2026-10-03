@@ -29,6 +29,7 @@ const toUser = (r: Prisma.UserGetPayload<object>): User => ({
   authId: r.authId ?? undefined,
   email: r.email ?? undefined,
   stripeAccountId: r.stripeAccountId ?? undefined,
+  avatarUrl: r.avatarUrl ?? undefined,
   createdAt: iso(r.createdAt),
 });
 
@@ -478,6 +479,9 @@ export function createPrismaStore(connectionString: string): Store {
 
     async setStripeAccount(userId, accountId) {
       return toUser(await db.user.update({ where: { id: userId }, data: { stripeAccountId: accountId ?? null } }));
+    },
+    async setAvatar(userId, url) {
+      await db.user.update({ where: { id: userId }, data: { avatarUrl: url } });
     },
 
     async listPrices(agentId) {

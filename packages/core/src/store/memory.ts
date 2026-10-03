@@ -288,6 +288,10 @@ export function createMemoryStore(): Store {
       user.stripeAccountId = accountId;
       return user;
     },
+    async setAvatar(userId, url) {
+      const user = users.find((u) => u.id === userId);
+      if (user) user.avatarUrl = url;
+    },
 
     async listPrices(agentId) {
       return prices.filter((p) => p.agentId === agentId);

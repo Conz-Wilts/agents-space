@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { store } from "@agents-space/core";
+import { store, type Agent } from "@agents-space/core";
 import { getSessionUser } from "@/lib/supabase/server";
 import { AppPage } from "@/components/landing/app-page";
-import { AgentTile, EmptyState, Monogram, PageTitle, SectionHead, TileGrid } from "@/components/landing/directory";
+import { AgentTile, Avatar, EmptyState, PageTitle, SectionHead, TileGrid, type Creator } from "@/components/landing/directory";
 import { d } from "@/components/landing/primitives";
 
 export default async function Directory({ searchParams }: PageProps<"/directory">) {
@@ -12,10 +12,17 @@ export default async function Directory({ searchParams }: PageProps<"/directory"
   // The viewer sees what the directory lists for them: public, listed, and restricted ones they are approved for.
   const agents = (await store.listAgents({ query, viewerId: user?.id })).filter((a) => a.status === "published" && a.visibility !== "private");
 
-  // People = agent owners, most agents first.
-  const people = [...agents.reduce((m, a) => m.set(a.owner, (m.get(a.owner) ?? 0) + 1), new Map<string, number>())].sort(
-    (a, b) => b[1] - a[1],
+  // Owners' profile icons, by user id.
+  const ownerIds = [...new Set(agents.flatMap((a) => (a.ownerId ? [a.ownerId] : [])))];
+  const icons = new Map(
+    (await Promise.all(ownerIds.map((id) => store.getUser(id)))).flatMap((u) => (u?.avatarUrl ? [[u.id, u.avatarUrl] as const] : [])),
   );
+  const creator = (a: Agent): Creator => ({ name: a.owner, avatarUrl: a.ownerId ? icons.get(a.ownerId) : undefined });
+
+  // People = agent owners, most agents first.
+  const byOwner = new Map<string, { creator: Creator; count: number }>();
+  for (const a of agents) byOwner.set(a.owner, { creator: creator(a), count: (byOwner.get(a.owner)?.count ?? 0) + 1 });
+  const people = [...byOwner.values()].sort((a, b) => b.count - a.count);
 
   return (
     <AppPage>
@@ -74,7 +81,7 @@ export default async function Directory({ searchParams }: PageProps<"/directory"
             <TileGrid>
               {agents.map((a, i) => (
                 <li key={a.id}>
-                  <AgentTile agent={a} delay={150 + Math.min(i, 8) * 70} />
+                  <AgentTile agent={a} creator={creator(a)} delay={150 + Math.min(i, 8) * 70} />
                 </li>
               ))}
             </TileGrid>
@@ -85,13 +92,13 @@ export default async function Directory({ searchParams }: PageProps<"/directory"
           <div data-animate className="flex flex-col gap-6">
             <SectionHead label="People" count={people.length} />
             <ul className="flex flex-wrap gap-3">
-              {people.map(([name, count], i) => (
+              {people.map(({ creator: { name, avatarUrl }, count }, i) => (
                 <li
                   key={name}
                   className="r flex items-center gap-2.5 rounded-full bg-white py-1.5 pr-4 pl-1.5 outline outline-1 -outline-offset-1 outline-edge"
                   style={d(150 + Math.min(i, 10) * 50)}
                 >
-                  <Monogram name={name} size={28} />
+                  <Avatar creator={{ name, avatarUrl }} size={28} />
                   <span className="text-[15px] text-ink">{name}</span>
                   <span className="font-mono text-[12px] text-muted">{count}</span>
                 </li>

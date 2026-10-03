@@ -5,6 +5,7 @@ CREATE TABLE "public"."User" (
   "authId"    text,
   "email"     text,
   "stripeAccountId" text,
+  "avatarUrl" text,
   "createdAt" timestamp(3) without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "User_pkey" PRIMARY KEY (id)
 );
