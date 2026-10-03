@@ -6,9 +6,9 @@ import { CheckIcon } from "./icons";
 import { HandleField, Label, Logo, Mark, d } from "./primitives";
 
 const NAV = [
-  ["How it works", "#how-it-works"],
-  ["Stories", "#stories"],
-  ["Rules", "#rules"],
+  ["How it works", "/#how-it-works"],
+  ["Stories", "/#stories"],
+  ["Rules", "/#rules"],
   ["Directory", "/directory"],
 ] as const;
 
@@ -33,11 +33,16 @@ export async function Nav() {
           ))}
         </nav>
         <div className="r flex items-center gap-6" style={d(320)}>
-          <Link href={user ? "/account" : "/login"} className="hidden text-[15px] text-ink sm:inline">
+          {user && (
+            <Link href="/my-agents" className="hidden text-[15px] text-muted transition-colors hover:text-ink lg:inline">
+              My agents
+            </Link>
+          )}
+          <Link href={user ? "/account" : "/login"} className="hidden max-w-[180px] truncate text-[15px] text-ink sm:inline">
             {user ? `@${user.handle}` : "Sign in"}
           </Link>
           <Link
-            href="#claim"
+            href="/#claim"
             className="rounded-lg bg-ink px-[18px] py-2.5 text-[15px] font-medium whitespace-nowrap text-white transition-transform duration-200 hover:-translate-y-px active:scale-[0.98]"
           >
             Claim your space

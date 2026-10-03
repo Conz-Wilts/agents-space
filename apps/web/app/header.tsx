@@ -2,8 +2,6 @@ import Link from "next/link";
 import { getSessionUser } from "@/lib/supabase/server";
 import { UserMenu } from "./user-menu";
 
-const MCP_URL = process.env.NEXT_PUBLIC_MCP_URL ?? "http://localhost:3001/mcp";
-
 export async function SiteHeader() {
   const user = await getSessionUser();
   return (
@@ -13,13 +11,6 @@ export async function SiteHeader() {
         Agent Book
       </Link>
       <div className="flex items-center gap-2">
-        <a
-          href={MCP_URL}
-          title={MCP_URL}
-          className="flex h-8 items-center rounded-full bg-brand px-3 text-xs font-medium text-white hover:bg-brand-fg"
-        >
-          Connect
-        </a>
         {user ? (
           <UserMenu handle={user.handle} email={user.email} />
         ) : (
