@@ -1,6 +1,7 @@
 import Link from "next/link";
-import type { ReactNode } from "react";
 import { getSessionUser } from "@/lib/supabase/server";
+import { AgentCalls } from "./agent-calls";
+import { AgentLogo, AGENTS, type AgentId } from "./agents";
 import { CheckIcon } from "./icons";
 import { HandleField, Label, Logo, Mark, d } from "./primitives";
 
@@ -47,46 +48,6 @@ export async function Nav() {
   );
 }
 
-function Said({ who, children, at }: { who: string; children: ReactNode; at: number }) {
-  return (
-    <div className="r flex flex-col gap-1.5" style={d(at)}>
-      <Label>{who}</Label>
-      <p className="text-[17px] leading-[25px] text-ink">{children}</p>
-    </div>
-  );
-}
-
-/** "Emma's space" reply: typing dots first, then the answer rises in. */
-function SpaceSaid({ children, status, at }: { children: ReactNode; status?: string; at: number }) {
-  return (
-    <div className="r relative flex flex-col items-start gap-1.5 py-0.5 pl-4" style={d(at)}>
-      <span className="r-grow absolute inset-y-0 left-0 w-0.5 origin-top bg-ink" style={d(at)} />
-      <Label>Emma’s space</Label>
-      <div className="relative w-full">
-        <span className="typing absolute top-2 left-0 flex gap-1" style={d(at)} aria-hidden>
-          {[0, 1, 2].map((i) => (
-            <span key={i} className="size-1.5 rounded-full bg-muted" style={{ animationDelay: `${i * 150}ms` }} />
-          ))}
-        </span>
-        <p className="r text-[17px] leading-[25px] text-ink" style={d(at + 900)}>
-          {children}
-        </p>
-      </div>
-      {status && (
-        <span
-          className="r-pop mt-1 flex items-center gap-2 rounded-full px-2.5 py-1.5 outline outline-1 -outline-offset-1 outline-edge"
-          style={d(at + 1500)}
-        >
-          <span className="flex size-3.5 items-center justify-center rounded-full bg-ink text-white">
-            <CheckIcon className="size-2.5" strokeWidth={3.5} />
-          </span>
-          <span className="font-mono text-[14px] text-ink">{status}</span>
-        </span>
-      )}
-    </div>
-  );
-}
-
 export function Hero() {
   return (
     <section
@@ -119,38 +80,8 @@ export function Hero() {
       </div>
 
       <div className="flex w-full min-w-0 flex-1 flex-col items-end gap-4">
-        <div className="r lift w-full overflow-hidden rounded-2xl bg-panel outline outline-1 -outline-offset-1 outline-edge" style={d(400)}>
-          <div className="flex flex-col gap-2 border-b border-edge px-6 py-4">
-            <div className="flex items-center gap-2.5">
-              <span className="ping size-2 rounded-full bg-ink" />
-              <span className="font-mono text-[14px] text-ink">agentspace.me/emma</span>
-            </div>
-            <span className="font-mono text-[13px] text-muted">ILLUSTRATIVE EXAMPLE</span>
-          </div>
-          <div className="flex flex-col gap-[22px] p-5 sm:p-7">
-            <Said who="Adam’s agent" at={1000}>
-              Can Adam do dinner with the Millers this Saturday?
-            </Said>
-            <div className="r relative flex justify-between gap-2.5 overflow-hidden rounded-md bg-white px-3 py-2 font-mono text-[13px]" style={d(1600)}>
-              <span className="flex items-center gap-2 text-muted">
-                <span className="spinner size-3 rounded-full border-[1.5px] border-edge border-t-ink" style={d(1600)} />
-                Check shared availability
-              </span>
-              <span className="r-pop text-ink" style={d(2500)}>
-                Free after 6pm
-              </span>
-              <span className="scan pointer-events-none absolute inset-0" style={d(1600)} />
-            </div>
-            <SpaceSaid at={2800}>
-              Saturday is free after 6. Emma lets Adam’s agent add evening plans when the family calendar is clear.
-            </SpaceSaid>
-            <Said who="Adam’s agent" at={4600}>
-              Great. Add dinner for 7pm.
-            </Said>
-            <SpaceSaid at={5300} status="Done · within Emma’s rules">
-              Added to the family calendar for Saturday at 7pm. This fits Emma’s rules, so no approval was needed.
-            </SpaceSaid>
-          </div>
+        <div className="r lift w-full rounded-2xl" style={d(400)}>
+          <AgentCalls />
         </div>
 
         <div className="float w-full max-w-[400px]">
@@ -166,7 +97,7 @@ export function Hero() {
                 </span>
                 Outside her rules
               </span>
-              <span className="text-[13px] text-dark-muted">EXAMPLE</span>
+              <span className="text-[13px] text-dark-muted">from Claude’s request</span>
             </div>
             <div className="flex flex-col gap-1 text-[15px] leading-[22px]">
               <p className="font-medium text-white">A Sunday plan? Emma decides.</p>
@@ -292,6 +223,42 @@ export function Problem() {
           </p>
         </div>
       </div>
+    </section>
+  );
+}
+
+const STRIP: AgentId[] = ["muse", "instinct", "grok", "claude", "chatgpt"];
+
+/** Marquee of the personal agents a space can answer. */
+export function AgentStrip() {
+  const row = (hidden: boolean) => (
+    <ul aria-hidden={hidden || undefined} className="flex shrink-0 items-center gap-14 pr-14">
+      {[...STRIP, ...STRIP].map((id, n) => (
+        <li key={`${id}-${n}`} className="flex items-center gap-3 whitespace-nowrap">
+          <AgentLogo id={id} size={36} />
+          <span className="flex flex-col leading-tight">
+            <span className="text-[17px] font-medium tracking-[-0.3px] text-ink">{AGENTS[id].name}</span>
+            <span className="font-mono text-[11px] tracking-[1px] text-muted uppercase">{AGENTS[id].by}</span>
+          </span>
+        </li>
+      ))}
+      <li className="font-mono text-[13px] whitespace-nowrap text-muted">+ any agent that speaks MCP</li>
+    </ul>
+  );
+  return (
+    <section data-animate className="border-t border-edge py-10 lg:py-12">
+      <p className="r px-5 text-center font-mono text-[13px] tracking-[1px] text-muted sm:px-10" style={d(0)}>
+        BUILT FOR THE AGENTS PEOPLE ALREADY USE
+      </p>
+      <div className="r marquee group mt-7 flex overflow-hidden" style={d(150)}>
+        <div className="marquee-track flex group-hover:[animation-play-state:paused]">
+          {row(false)}
+          {row(true)}
+        </div>
+      </div>
+      <p className="r mt-6 px-5 text-center text-[12px] text-wait sm:px-10" style={d(300)}>
+        Illustrative examples. Product names and logos belong to their owners; Agent Space isn’t affiliated with them.
+      </p>
     </section>
   );
 }

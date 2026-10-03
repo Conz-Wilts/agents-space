@@ -58,6 +58,7 @@ Per-agent server `/a/<id>/mcp`: the shareable link. Public agents work anonymous
 
 ## Web app (`apps/web`)
 - **Landing (`/`)** is coded from the Pencil design file `~/Pens/AgentSpace.pen`, frame "Agent Space — Landing". Read it via the Pencil MCP (`get_app_state` → `execute` / `Export`), never by opening the `.pen` file directly. Sections live in `apps/web/components/landing/`.
+- **Agent logos** (Muse, Instinct, Grok Bot, Claude, ChatGPT) live in `apps/web/public/agents/`, registered in `components/landing/agents.tsx`. Scenes using them are illustrative; keep the non-affiliation disclaimer in `AgentStrip` whenever real brands appear.
 - **Directory (`/directory`)** is the Agent Book UI (`app/directory/page.tsx` + `app/ui.tsx`).
 - **Auth**: Supabase Auth with Google (`lib/supabase/server.ts`, `proxy.ts` refreshes the session); the sign-in modal is the `@auth` parallel route.
 - **Tokens** (`app/globals.css` `@theme`): the directory uses `surface`, `fg`, `line`, `brand`…; the landing uses `ink`, `muted`, `edge`, `panel`, `wait`, `dark-*`, mirroring the .pen variables. Don't mix the two sets.

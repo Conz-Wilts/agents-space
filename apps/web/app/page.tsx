@@ -1,4 +1,4 @@
-import { Hero, Nav, Problem } from "@/components/landing/hero";
+import { AgentStrip, Hero, Nav, Problem } from "@/components/landing/hero";
 import { LandingMotion } from "@/components/landing/motion";
 import { Network } from "@/components/landing/network";
 import { FinalCta, Footer, HowItWorks, Rules, Stories } from "@/components/landing/sections";
@@ -11,6 +11,7 @@ export default function Landing() {
       <Nav />
       <main>
         <Hero />
+        <AgentStrip />
         <Problem />
         <Network />
         <Stories />

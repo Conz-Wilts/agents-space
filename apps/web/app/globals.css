@@ -203,6 +203,18 @@ body {
   animation: rise-mask 1s cubic-bezier(0.2, 0.8, 0.2, 1) calc(var(--d, 0ms) + 110ms) backwards, shake 0.6s ease calc(var(--d, 0ms) + 1500ms);
 }
 
+/* Hero agent calls: packet along the wire, countdown ring on the active tab */
+@keyframes wire { from { left: 0; opacity: 1; } 90% { opacity: 1; } to { left: calc(100% - 8px); opacity: 0; } }
+@keyframes scene-progress { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.wire-packet { left: 0; opacity: 0; }
+[data-in] .wire-packet { animation: wire 0.7s cubic-bezier(0.5, 0, 0.3, 1) var(--d, 0ms) backwards; }
+.scene-progress { transform: scaleX(0); animation: scene-progress linear forwards; }
+
+/* Agent logo marquee (track holds two copies; slides one copy width) */
+@keyframes marquee { to { transform: translateX(-50%); } }
+.marquee { mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent); }
+.marquee-track { animation: marquee 38s linear infinite; }
+
 /* Sticky nav gains a frosted backdrop once the page scrolls */
 .nav-bar { transition: background-color 0.3s, box-shadow 0.3s, backdrop-filter 0.3s; }
 html[data-scrolled] .nav-bar {
@@ -231,5 +243,8 @@ html[data-scrolled] .nav-bar {
   *, *::before, *::after { animation: none !important; transition: none !important; }
   [data-animate] :is(.r, .r-pop, .r-fade, .r-mask > *, .r-slide, .r-type, .r-draw, .r-grow, .r-progress) { opacity: 1 !important; }
   .r-draw { stroke-dashoffset: 0; }
-  .packet, .ripple, .typing, .scan, .spinner { display: none; }
+  .packet, .ripple, .typing, .scan, .spinner, .wire-packet { display: none; }
+  .marquee-track > :last-child { display: none; }
+  .marquee { mask-image: none; }
+  .marquee-track { flex-wrap: wrap; justify-content: center; }
 }

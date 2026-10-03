@@ -1,3 +1,4 @@
+import { AgentLogo } from "./agents";
 import { Mark, SectionTitle, d } from "./primitives";
 
 // Paths in the 1280×560 diagram space: [d, ms it draws in, length (rounded up; drives the dash draw)].
@@ -43,7 +44,7 @@ const BADGES = [
   { n: 4, label: "ONLY IF NEEDED", left: 1080, top: 500, at: 2900 },
 ];
 const STEPS = [
-  ["Ask", "Adam tells his agent: dinner with the Millers on Saturday, somewhere nice."],
+  ["Ask", "Adam tells Muse, his agent: dinner with the Millers on Saturday, somewhere nice."],
   ["Find", "His agent uses the addresses Emma and Jess shared, then finds Marco’s public listing."],
   ["Call", "Each space checks its owner’s information and permissions before answering or taking action."],
   ["Only if needed", "Requests that need a decision go to the owner. Disallowed requests stay blocked."],
@@ -90,9 +91,12 @@ function Diagram() {
           <span className="font-mono text-[14px] tracking-[1px] text-dark-muted">YOU</span>
         </span>
       </div>
-      <div className={`r ${card} top-[244px] left-[232px] h-[72px] w-[200px]`} style={d(450)}>
-        <span className="text-[15px] font-medium text-white">Adam’s agent</span>
-        <span className="font-mono text-[14px] tracking-[1px] text-dark-muted">MCP CONNECTION</span>
+      <div className={`r ${card} top-[244px] left-[232px] h-[72px] w-[200px] !flex-row items-center !justify-start gap-3`} style={d(450)}>
+        <AgentLogo id="muse" size={34} />
+        <span className="flex flex-col gap-1">
+          <span className="text-[15px] font-medium text-white">Adam’s Muse</span>
+          <span className="font-mono text-[13px] tracking-[1px] text-dark-muted">VIA MCP</span>
+        </span>
       </div>
 
       <div
