@@ -16,6 +16,17 @@ export const UserSchema = z.object({
 });
 export type User = z.infer<typeof UserSchema>;
 
+/** A pending CLI sign-in (device flow). The device code itself is never stored. */
+export const DeviceLoginSchema = z.object({
+  userCode: z.string(),
+  status: z.enum(["pending", "approved", "denied"]),
+  userId: z.string().optional(),
+  clientName: z.string().optional(),
+  createdAt: z.string(),
+  expiresAt: z.string(),
+});
+export type DeviceLogin = z.infer<typeof DeviceLoginSchema>;
+
 /**
  * Which connector an agent may use, and which of its declared actions.
  * This is the scope: callers of the agent can only run these actions.

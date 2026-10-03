@@ -58,6 +58,7 @@ model User {
   agents         Agent[]
   connectors     Connector[]
   accessRequests AccessRequest[]
+  deviceLogins   DeviceLogin[]
 }
 
 model Agent {
@@ -162,6 +163,20 @@ model AccessRequest {
 
   @@index([agentId])
   @@index([requesterId])
+}
+
+/// Pending CLI sign-in (device flow). The device code is stored only as a sha256 hash.
+model DeviceLogin {
+  deviceCodeHash String   @id
+  userCode       String   @unique
+  /// pending | approved | denied (check constraint in the Supabase schema)
+  status         String   @default("pending")
+  clientName     String?
+  createdAt      DateTime @default(now())
+  expiresAt      DateTime
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Bottleneck {

@@ -4,6 +4,15 @@ import { Eyebrow, Logo } from "@/components/landing/primitives";
 import { createClient, getSessionUser, supabaseConfigured } from "@/lib/supabase/server";
 import { decide } from "./actions";
 
+/** Loopback redirects are the MCP client on this machine; the raw URL is noise. */
+function returnsTo(uri: string, client?: string) {
+  try {
+    const host = new URL(uri).hostname;
+    if (host === "localhost" || host === "127.0.0.1") return `this computer (${client || "your MCP client"})`;
+  } catch {}
+  return uri;
+}
+
 /**
  * Consent screen for MCP clients signing in through Supabase Auth's OAuth 2.1 server.
  * Set this path (/oauth/consent) as the Authorization Path in Supabase → Authentication → OAuth Server.
@@ -48,7 +57,7 @@ export default async function Consent({ searchParams }: PageProps<"/oauth/consen
             )}
             <div className="flex gap-2">
               <dt className="shrink-0 uppercase tracking-[1px]">Returns to</dt>
-              <dd className="truncate text-ink">{data.redirect_uri}</dd>
+              <dd className="truncate text-ink">{returnsTo(data.redirect_uri, data.client.name)}</dd>
             </div>
           </dl>
           {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">That didn&apos;t go through. Please try again.</p>}

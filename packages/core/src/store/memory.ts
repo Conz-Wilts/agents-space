@@ -1,8 +1,8 @@
 import { seedAgents } from "../seed";
 import { matchAgents } from "../match";
-import { AgentSchema, type AccessRequest, type Bottleneck, type Connector, type ContextNote, type User } from "../schema";
+import { AgentSchema, type AccessRequest, type Bottleneck, type Connector, type ContextNote, type DeviceLogin, type User } from "../schema";
 import type { Store } from "./index";
-import { handleCandidates, hashKey, newApiKey, normalizeHandle, slug } from "./util";
+import { DEVICE_LOGIN_TTL_MS, handleCandidates, hashKey, newApiKey, newDeviceCode, newUserCode, normalizeHandle, normalizeUserCode, slug } from "./util";
 
 const now = () => new Date().toISOString();
 
@@ -16,6 +16,19 @@ export function createMemoryStore(): Store {
   const secrets = new Map<string, Record<string, string>>();
   const requests: AccessRequest[] = [];
   const bottlenecks: Bottleneck[] = [];
+  const deviceLogins = new Map<string, DeviceLogin>(); // by device code hash
+  const liveByUserCode = (code: string) => {
+    const c = normalizeUserCode(code);
+    return [...deviceLogins.values()].find((d) => d.userCode === c && d.expiresAt > now());
+  };
+
+  const rotateApiKey = async (userId: string) => {
+    const user = users.find((u) => u.id === userId);
+    if (!user) throw new Error("No such user.");
+    const apiKey = newApiKey();
+    user.keyHash = hashKey(apiKey);
+    return apiKey;
+  };
 
   return {
     async listAgents({ query, category, viewerId } = {}) {
@@ -81,13 +94,7 @@ export function createMemoryStore(): Store {
       users.push(user);
       return user;
     },
-    async rotateApiKey(userId) {
-      const user = users.find((u) => u.id === userId);
-      if (!user) throw new Error("No such user.");
-      const apiKey = newApiKey();
-      user.keyHash = hashKey(apiKey);
-      return apiKey;
-    },
+    rotateApiKey,
 
     async saveConnector(c) {
       const i = connectors.findIndex((x) => x.name === c.name);
@@ -137,6 +144,41 @@ export function createMemoryStore(): Store {
       if (a.status !== "published") return false;
       if (a.visibility === "public") return true;
       return !!userId && requests.some((r) => r.agentId === agentId && r.requesterId === userId && r.status === "approved");
+    },
+
+    async startDeviceLogin(clientName) {
+      for (const [k, d] of deviceLogins) if (d.expiresAt <= now()) deviceLogins.delete(k);
+      let userCode = newUserCode();
+      while ([...deviceLogins.values()].some((d) => d.userCode === userCode)) userCode = newUserCode();
+      const deviceCode = newDeviceCode();
+      const expiresAt = new Date(Date.now() + DEVICE_LOGIN_TTL_MS).toISOString();
+      deviceLogins.set(hashKey(deviceCode), { userCode, status: "pending", clientName: clientName?.trim().slice(0, 60) || undefined, createdAt: now(), expiresAt });
+      return { deviceCode, userCode, expiresAt };
+    },
+    async getDeviceLogin(userCode) {
+      return liveByUserCode(userCode);
+    },
+    async decideDeviceLogin(userCode, userId, decision) {
+      const d = liveByUserCode(userCode);
+      if (!d || d.status !== "pending") return false;
+      d.status = decision;
+      d.userId = userId;
+      return true;
+    },
+    async redeemDeviceLogin(deviceCode) {
+      const key = hashKey(deviceCode);
+      const d = deviceLogins.get(key);
+      if (!d || d.expiresAt <= now()) {
+        deviceLogins.delete(key);
+        return { status: "expired" };
+      }
+      if (d.status === "pending") return { status: "pending" };
+      deviceLogins.delete(key);
+      if (d.status === "denied" || !d.userId) return { status: "denied" };
+      const user = users.find((u) => u.id === d.userId);
+      if (!user) return { status: "expired" };
+      const apiKey = await rotateApiKey(user.id);
+      return { status: "approved", apiKey, user };
     },
 
     async listBottlenecks() {
