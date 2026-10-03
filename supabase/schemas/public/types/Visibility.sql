@@ -1,4 +1,6 @@
 CREATE TYPE "public"."Visibility" AS ENUM (
   'public',
-  'private'
+  'private',
+  'listed',
+  'restricted'
 );

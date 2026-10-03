@@ -2,6 +2,7 @@ import { createMcpHandler } from "mcp-handler";
 import { z } from "zod";
 import { store, loadSkill, runAgentAction, scopedActions, type ActionParam } from "@agents-space/core";
 import { currentUser, metadataPathFor, oauthEnabled, requireUser, withAuth } from "@/lib/auth";
+import { reachable } from "@/lib/access";
 import { safe, text } from "@/lib/format";
 
 const zodFor: Record<ActionParam["type"], () => z.ZodType> = {
@@ -30,11 +31,14 @@ function paramsSchema(params: Record<string, ActionParam>) {
  * sent as server instructions and via the `instructions` tool. No access → only request_access.
  */
 async function serve(req: Request, id: string) {
-  const agent = await store.getAgent(id);
+  const userId = req.auth?.clientId;
+  // Unknown, draft and private (not yours) all answer the same.
+  const agent = await reachable(id, userId);
   if (!agent || agent.kind !== "hosted") return Response.json({ error: `No hosted agent "${id}"` }, { status: 404 });
 
-  const userId = req.auth?.clientId;
   const access = await store.hasAccess(agent.id, userId);
+  // Without use access, the tagline only goes to those who may see the agent's info (public/listed).
+  const info = access || (await store.canSeeInfo(agent.id, userId));
   const [skill, actions] = access ? await Promise.all([loadSkill(agent), scopedActions(agent)]) : ["", []];
 
   const handler = createMcpHandler(
@@ -44,7 +48,7 @@ async function serve(req: Request, id: string) {
           "request_access",
           {
             title: `Request access to ${agent.name}`,
-            description: `${agent.name} is ${agent.status === "published" ? "private" : "not published"}. Ask the owner for access (needs an Agents Space API key).`,
+            description: `${agent.name} needs the owner's approval. Ask the owner for access (needs an Agents Space API key).`,
             inputSchema: z.object({ message: z.string().default("") }),
           },
           safe(async ({ message }, c) => {
@@ -79,18 +83,25 @@ async function serve(req: Request, id: string) {
     },
     {
       serverInfo: { name: `agents-space/${agent.id}`, version: "1.0.0" },
-      instructions: access ? skill.slice(0, 8000) : `${agent.name}: ${agent.tagline} (access required)`,
+      instructions: access
+        ? skill.slice(0, 8000)
+        : info
+          ? `${agent.name}: ${agent.tagline} (access required)`
+          : `${agent.name} (access required)`,
     },
   );
   return handler(req);
 }
 
 /**
- * Public agents work anonymously; private ones ask the client to sign in (OAuth) first.
+ * With OAuth enabled, only published public agents work anonymously; every other id (unknown,
+ * draft, private, listed, restricted) gets the same sign-in challenge, so strangers learn nothing
+ * and owners can start OAuth on their own private agents. Without OAuth nothing is challenged
+ * and `serve` answers 404 for ids the caller can't reach.
  * `mcpPath` is the path the client connected to (`/a/<id>/mcp`, or `/<handle>/mcp` for a space).
  */
 export async function agentRoute(req: Request, id: string, mcpPath: string) {
   const agent = await store.getAgent(id);
-  const open = !agent || (agent.status === "published" && agent.visibility === "public");
+  const open = !!agent && agent.status === "published" && agent.visibility === "public";
   return withAuth((r) => serve(r, id), { required: oauthEnabled() && !open, metadataPath: metadataPathFor(mcpPath) })(req);
 }

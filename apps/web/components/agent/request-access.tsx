@@ -3,7 +3,7 @@
 import { useActionState } from "react";
 import { requestAccess, type RequestState } from "./actions";
 
-/** Non-owners on a private agent: ask for access, or see that a request is waiting. */
+/** Non-owners on an agent that needs approval: ask for access, or see that a request is waiting. */
 export function RequestAccess({ agentId, status }: { agentId: string; status?: "pending" | "denied" }) {
   const [state, action, pending] = useActionState<RequestState, FormData>(requestAccess.bind(null, agentId), {});
 

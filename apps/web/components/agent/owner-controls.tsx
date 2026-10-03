@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
+import type { Visibility } from "@agents-space/core";
 import { setVisibility } from "./actions";
+import { VISIBILITY_HINTS, VISIBILITY_LABELS, VISIBILITY_ORDER } from "./visibility";
 
-/** Owner-only: Public / Private switch and a Share menu that copies the page or MCP link. */
+/** Owner-only: visibility switch (public, listed, specific people, private) and a Share menu that copies the page or MCP link. */
 export function OwnerControls({
   agentId,
   visibility,
@@ -11,14 +13,14 @@ export function OwnerControls({
   draft,
 }: {
   agentId: string;
-  visibility: "public" | "private";
+  visibility: Visibility;
   endpoint?: string;
   draft: boolean;
 }) {
   const [pending, start] = useTransition();
   const [vis, setVis] = useState(visibility);
 
-  const choose = (v: "public" | "private") => {
+  const choose = (v: Visibility) => {
     if (v === vis) return;
     setVis(v);
     start(() => setVisibility(agentId, v).catch(() => setVis(vis)));
@@ -26,17 +28,18 @@ export function OwnerControls({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <div role="radiogroup" aria-label="Visibility" className={`flex rounded-lg bg-panel p-1 outline outline-1 -outline-offset-1 outline-edge ${pending ? "opacity-60" : ""}`}>
-        {(["public", "private"] as const).map((v) => (
+      <div role="radiogroup" aria-label="Visibility" className={`flex flex-wrap rounded-lg bg-panel p-1 outline outline-1 -outline-offset-1 outline-edge ${pending ? "opacity-60" : ""}`}>
+        {VISIBILITY_ORDER.map((v) => (
           <button
             key={v}
             type="button"
             role="radio"
             aria-checked={vis === v}
+            title={VISIBILITY_HINTS[v]}
             onClick={() => choose(v)}
-            className={`h-8 rounded-md px-3.5 text-[14px] capitalize transition-colors ${vis === v ? "bg-ink font-medium text-white" : "text-muted hover:text-ink"}`}
+            className={`h-8 rounded-md px-3 text-[14px] transition-colors ${vis === v ? "bg-ink font-medium text-white" : "text-muted hover:text-ink"}`}
           >
-            {v}
+            {VISIBILITY_LABELS[v]}
           </button>
         ))}
       </div>

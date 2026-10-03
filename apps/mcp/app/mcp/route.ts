@@ -15,11 +15,13 @@ import {
   slug,
   claimSpace,
   getSpace,
+  VisibilitySchema,
   type Agent,
   type User,
 } from "@agents-space/core";
 import { currentUser, metadataPathFor, oauthEnabled, requireUser, withAuth } from "@/lib/auth";
-import { agentEndpoint, fmt, origin, safe, spaceEndpoint, text } from "@/lib/format";
+import { reachable } from "@/lib/access";
+import { VISIBILITY_HELP, agentEndpoint, fmt, origin, safe, spaceEndpoint, text } from "@/lib/format";
 
 let base = origin();
 const WEB_URL = process.env.NEXT_PUBLIC_WEB_URL ?? "http://localhost:3000";
@@ -31,9 +33,28 @@ async function withAccess(agents: Agent[], userId?: string) {
 
 async function ownedAgent(id: string, userId: string) {
   const a = await store.getAgent(id);
-  if (!a) throw new Error(`No agent "${id}". See my_agents.`);
+  // Someone else's draft or private agent is indistinguishable from an unknown id.
+  if (!a || (a.ownerId !== userId && (a.status !== "published" || a.visibility === "private"))) throw new Error(`No agent "${id}". See my_agents.`);
   if (a.ownerId !== userId) throw new Error(`You don't own "${id}".`);
   return a;
+}
+
+const SPACE_MODE: Record<Agent["visibility"], string> = {
+  public: "public: anyone can call it, listed in the directory",
+  listed: "listed: shown in the directory, but only people you approve can call it",
+  restricted: "restricted: only people you approve can see or call it, not in the directory for anyone else",
+  private: "private: only you can see or call it",
+};
+
+/** The agent an owner manages access for: their own space when `agentId` is omitted. */
+async function accessTarget(ctx: Parameters<typeof requireUser>[0], agentId?: string) {
+  if (!agentId) {
+    const { user, space } = await ownSpace(ctx);
+    return { user, agent: space, name: "your space" };
+  }
+  const user = await requireUser(ctx);
+  const agent = await ownedAgent(agentId, user.id);
+  return { user, agent, name: agent.name };
 }
 
 /** Where the space stands and what to do next. */
@@ -49,7 +70,7 @@ async function spaceStatus(user: User, space: Agent) {
   return [
     // Built from the serving origin, not the stored endpoint: a claim made on another deployment (or locally) stored its own origin.
     `Your space: ${spaceEndpoint(base, space.id)}`,
-    `@${user.handle} · ${space.visibility === "private" ? "private: only people you approve can call it, not listed in the directory" : "public: anyone can call it, listed in the directory"}`,
+    `@${user.handle} · ${SPACE_MODE[space.visibility]}`,
     "",
     `Shared context: ${notes.length ? notes.map((n) => n.title).join(", ") : "nothing yet"}`,
     `Actions it can take: ${actions.length ? actions.map(actionSignature).join(", ") : "none yet"}`,
@@ -61,7 +82,7 @@ async function spaceStatus(user: User, space: Agent) {
     `Next steps (agent_id "${space.id}"):`,
     "1. Share what it can use: add_context_note (availability, prices, policies, FAQs), or create_connector + attach_connector for a calendar or other system.",
     "2. Set your rules in plain words with update_agent instructions: what it answers alone, what it asks you first, what it never touches.",
-    `3. Decide who can reach you: allow_access("@their-handle") (list_access, revoke_access). Their agents then call ask_space("${space.id}"). To be listed in the directory, update_agent visibility public.`,
+    `3. Decide who can reach you: allow_access("@their-handle") (list_access, revoke_access). Their agents then call ask_space("${space.id}"). Visibility is "${space.visibility}"; change it with update_agent visibility (public, listed, restricted, private).`,
   ].join("\n");
 }
 
@@ -101,7 +122,7 @@ const agentBase = {
   solves: z.array(z.string()).describe("Jobs it removes, e.g. ['restaurant reservations','table bookings']"),
   tools: z.array(z.string()).describe("Products it operates, e.g. ['Google Reviews','OpenTable']"),
   category: z.string(),
-  visibility: z.enum(["public", "private"]).describe("private = listed, but people must request access"),
+  visibility: VisibilitySchema.describe(VISIBILITY_HELP),
   pricing: z.enum(["free", "usage", "subscription", "contact"]),
 };
 
@@ -118,6 +139,8 @@ const createAgentInput = z.object({
 // No defaults here: an omitted field must stay untouched.
 const updateAgentInput = z.object(agentBase).partial().extend({ agent_id: z.string() });
 
+const AGENT_ID = z.string().optional().describe("An agent you own. Omit for your own space.");
+
 const handler = createMcpHandler(
   (server) => {
     /* ───────────── account ───────────── */
@@ -127,7 +150,7 @@ const handler = createMcpHandler(
       {
         title: "Create an account",
         description:
-          "Create an Agents Space account and get an API key (shown ONCE). Needed to build agents, own connectors and request access to private agents. Humans can instead sign in with Google on the website and copy a key from their account page.",
+          "Create an Agents Space account and get an API key (shown ONCE). Needed to build agents, own connectors and request access to agents. Humans can instead sign in with Google on the website and copy a key from their account page.",
         inputSchema: z.object({ handle: z.string().describe("Lowercase handle, e.g. 'luigis-trattoria'") }),
       },
       safe(async ({ handle }) => {
@@ -175,7 +198,7 @@ const handler = createMcpHandler(
       {
         title: "Claim your space",
         description:
-          "Claim a handle and create your space at <origin>/<handle>/mcp: a private MCP that answers for you with what you share and the rules you set. Needs a Google sign-in. The handle is locked once claimed.",
+          "Claim a handle and create your space at <origin>/<handle>/mcp: an MCP restricted to people you approve, that answers for you with what you share and the rules you set. Needs a Google sign-in. The handle is locked once claimed.",
         inputSchema: z.object({ handle: z.string().describe("2–32 lowercase letters, numbers or dashes, e.g. 'emma' or 'marcos-trattoria'") }),
       },
       safe(async ({ handle }, ctx) => {
@@ -196,10 +219,10 @@ const handler = createMcpHandler(
       safe(async ({ handle }, ctx) => {
         const h = plainHandle(handle);
         const user = await currentUser(ctx);
-        const a = await store.getAgent(h);
+        const a = await reachable(h, user?.id);
         if (!a || a.kind !== "hosted") throw new Error(`No space "@${h}". Check the handle, or search_agents to find someone.`);
         if (!(await store.hasAccess(a.id, user?.id))) {
-          if (!user) throw new Error(`@${h}'s space is private. Sign in, then request_access("${h}").`);
+          if (!user) throw new Error(`@${h}'s space needs their approval. Sign in, then request_access("${h}").`);
           const pending = (await store.listAccessRequests({ requesterId: user.id })).some((r) => r.agentId === a.id && r.status === "pending");
           throw new Error(
             pending
@@ -218,16 +241,18 @@ const handler = createMcpHandler(
       "allow_access",
       {
         title: "Allow someone into your space",
-        description: "Whitelist a person by handle so their agents can use your space (ask_space). No request needed.",
-        inputSchema: z.object({ handle: z.string().describe("Their handle, with or without @") }),
+        description: "Whitelist a person by handle so their agents can use your space (ask_space), or another agent you own (agent_id). No request needed.",
+        inputSchema: z.object({ handle: z.string().describe("Their handle, with or without @"), agent_id: AGENT_ID }),
       },
-      safe(async ({ handle }, ctx) => {
-        const { space } = await ownSpace(ctx);
+      safe(async ({ handle, agent_id }, ctx) => {
+        const { agent, name } = await accessTarget(ctx, agent_id);
         const who = await store.userByHandle(plainHandle(handle));
         if (!who) throw new Error(`No one is @${plainHandle(handle)} on Agents Space yet.`);
-        const r = await store.requestAccess(space.id, who.id, "Allowed by the owner");
+        const r = await store.requestAccess(agent.id, who.id, "Allowed by the owner");
         if (r.status !== "approved") await store.decideAccessRequest(r.id, "approved");
-        return text(`@${who.handle} can now use your space: their agent calls ask_space("${space.id}").`);
+        const how = agent_id ? `use_agent("${agent.id}")` : `ask_space("${agent.id}")`;
+        const note = agent.visibility === "private" ? ` ${name} is private, so this only takes effect once you change its visibility.` : "";
+        return text(`@${who.handle} can now use ${name}: their agent calls ${how}.${note}`);
       }),
     );
 
@@ -235,16 +260,16 @@ const handler = createMcpHandler(
       "revoke_access",
       {
         title: "Remove someone from your space",
-        description: "Take a person's access to your space away. They can ask again with request_access.",
-        inputSchema: z.object({ handle: z.string().describe("Their handle, with or without @") }),
+        description: "Take a person's access to your space (or another agent you own, with agent_id) away. They can ask again with request_access.",
+        inputSchema: z.object({ handle: z.string().describe("Their handle, with or without @"), agent_id: AGENT_ID }),
       },
-      safe(async ({ handle }, ctx) => {
-        const { user, space } = await ownSpace(ctx);
+      safe(async ({ handle, agent_id }, ctx) => {
+        const { user, agent, name } = await accessTarget(ctx, agent_id);
         const who = await store.userByHandle(plainHandle(handle));
-        const grants = who ? (await store.listAccessRequests({ ownerId: user.id })).filter((r) => r.agentId === space.id && r.requesterId === who.id && r.status !== "denied") : [];
-        if (!grants.length) throw new Error(`@${plainHandle(handle)} has no access to your space.`);
+        const grants = who ? (await store.listAccessRequests({ ownerId: user.id })).filter((r) => r.agentId === agent.id && r.requesterId === who.id && r.status !== "denied") : [];
+        if (!grants.length) throw new Error(`@${plainHandle(handle)} has no access to ${name}.`);
         for (const r of grants) await store.decideAccessRequest(r.id, "denied");
-        return text(`@${who!.handle} no longer has access to your space.`);
+        return text(`@${who!.handle} no longer has access to ${name}.`);
       }),
     );
 
@@ -252,12 +277,12 @@ const handler = createMcpHandler(
       "list_access",
       {
         title: "Who can use your space",
-        description: "People allowed into your space, and requests waiting for you (approve with review_access_request or allow_access).",
-        inputSchema: z.object({}),
+        description: "People allowed into your space (or another agent you own, with agent_id), and requests waiting for you (approve with review_access_request or allow_access).",
+        inputSchema: z.object({ agent_id: AGENT_ID }),
       },
-      safe(async (_i, ctx) => {
-        const { user, space } = await ownSpace(ctx);
-        const rs = (await store.listAccessRequests({ ownerId: user.id })).filter((r) => r.agentId === space.id && r.status !== "denied");
+      safe(async ({ agent_id }, ctx) => {
+        const { user, agent } = await accessTarget(ctx, agent_id);
+        const rs = (await store.listAccessRequests({ ownerId: user.id })).filter((r) => r.agentId === agent.id && r.status !== "denied");
         const line = async (r: (typeof rs)[number]) => `• @${(await store.getUser(r.requesterId))?.handle ?? "?"}${r.message ? `: "${r.message}"` : ""} (${r.id})`;
         const allowed = await Promise.all(rs.filter((r) => r.status === "approved").map(line));
         const waiting = await Promise.all(rs.filter((r) => r.status === "pending").map(line));
@@ -295,7 +320,7 @@ const handler = createMcpHandler(
       "search_agents",
       {
         title: "Search the agent directory",
-        description: "Find agents by job-to-be-done and/or the tools they operate. Includes private agents (marked 'request access').",
+        description: "Find agents by job-to-be-done and/or the tools they operate. Includes agents you can see but not yet use (marked 'request access').",
         inputSchema: z.object({
           query: z.string().describe("What you need done"),
           tools: z.array(z.string()).default([]),
@@ -333,8 +358,9 @@ const handler = createMcpHandler(
       },
       safe(async ({ id }, ctx) => {
         const user = await currentUser(ctx);
-        const a = await store.getAgent(id);
-        if (!a || (a.status === "draft" && a.ownerId !== user?.id)) return text(`No agent with id "${id}".`);
+        const a = await reachable(id, user?.id);
+        if (!a) return text(`No agent with id "${id}".`);
+        if (!(await store.canSeeInfo(id, user?.id))) return text(`${a.name}\nYou don't have access to this agent. Call request_access("${a.id}") and the owner will review it.`);
         const access = await store.hasAccess(id, user?.id);
         const actions = access ? await scopedActions(a) : [];
         return text(
@@ -345,7 +371,7 @@ const handler = createMcpHandler(
             `solves: ${a.solves.join(", ") || "—"}`,
             access
               ? `actions: ${actions.map((x) => `${x.connector}.${x.action}`).join(", ") || "none"}\nUse it: use_agent("${a.id}") here, or connect ${a.endpoint ?? "its endpoint"} as its own MCP server.`
-              : `Private — call request_access("${a.id}") and the owner will review it.`,
+              : `Using it needs the owner's approval — call request_access("${a.id}") and they will review it.`,
           ].join("\n"),
         );
       }),
@@ -356,13 +382,13 @@ const handler = createMcpHandler(
     server.registerTool(
       "request_access",
       {
-        title: "Request access to a private agent",
-        description: "Ask a private agent's owner for access. They approve or deny with review_access_request.",
+        title: "Request access to an agent",
+        description: "Ask the owner of a listed or restricted agent for access. They approve or deny with review_access_request.",
         inputSchema: z.object({ agent_id: z.string(), message: z.string().default("").describe("Who you are and what you'll use it for") }),
       },
       safe(async ({ agent_id, message }, ctx) => {
         const user = await requireUser(ctx);
-        const a = await store.getAgent(agent_id);
+        const a = await reachable(agent_id, user.id);
         if (!a || a.status !== "published") throw new Error(`No published agent "${agent_id}".`);
         if (await store.hasAccess(a.id, user.id)) return text(`You already have access to ${a.name}.`);
         const r = await store.requestAccess(a.id, user.id, message);
@@ -372,7 +398,7 @@ const handler = createMcpHandler(
 
     server.registerTool(
       "my_access_requests",
-      { title: "My access requests", description: "Requests you've made to use private agents, and their status.", inputSchema: z.object({}) },
+      { title: "My access requests", description: "Requests you've made to use agents, and their status.", inputSchema: z.object({}) },
       safe(async (_i, ctx) => {
         const user = await requireUser(ctx);
         const rs = await store.listAccessRequests({ requesterId: user.id });
@@ -382,7 +408,7 @@ const handler = createMcpHandler(
 
     server.registerTool(
       "list_access_requests",
-      { title: "Incoming access requests", description: "People asking to use your private agents.", inputSchema: z.object({ status: z.enum(["pending", "approved", "denied"]).optional() }) },
+      { title: "Incoming access requests", description: "People asking to use your agents.", inputSchema: z.object({ status: z.enum(["pending", "approved", "denied"]).optional() }) },
       safe(async ({ status }, ctx) => {
         const user = await requireUser(ctx);
         const rs = (await store.listAccessRequests({ ownerId: user.id })).filter((r) => !status || r.status === status);
@@ -616,8 +642,8 @@ const handler = createMcpHandler(
       "publish_agent",
       {
         title: "Publish an agent",
-        description: "List a draft agent in the directory. Public = anyone can use it; private = listed, access by request. Returns its MCP endpoint to share (e.g. link it from your Google Business profile).",
-        inputSchema: z.object({ agent_id: z.string(), visibility: z.enum(["public", "private"]).optional() }),
+        description: "List a draft agent in the directory. Visibility decides who finds and uses it (public, listed, restricted, private). Returns its MCP endpoint to share (e.g. link it from your Google Business profile).",
+        inputSchema: z.object({ agent_id: z.string(), visibility: VisibilitySchema.optional().describe(VISIBILITY_HELP) }),
       },
       safe(async ({ agent_id, visibility }, ctx) => {
         const user = await requireUser(ctx);
@@ -664,10 +690,9 @@ const handler = createMcpHandler(
       },
       safe(async ({ agent_id }, ctx) => {
         const user = await currentUser(ctx);
-        const a = await store.getAgent(agent_id);
+        const a = await reachable(agent_id, user?.id);
         if (!a) throw new Error(`No agent "${agent_id}".`);
-        if (!(await store.hasAccess(a.id, user?.id)))
-          throw new Error(a.visibility === "private" ? `${a.name} is private. Call request_access("${a.id}").` : `${a.name} is not published.`);
+        if (!(await store.hasAccess(a.id, user?.id))) throw new Error(`${a.name} needs the owner's approval. Call request_access("${a.id}").`);
         if (a.kind === "external") return text(`${a.name} is an external agent. Connect to it directly: ${a.endpoint ?? "(no endpoint listed)"} via ${a.protocol}.`);
         const actions = await scopedActions(a);
         return text(
@@ -685,8 +710,9 @@ const handler = createMcpHandler(
       },
       safe(async ({ agent_id, connector, action, args }, ctx) => {
         const user = await currentUser(ctx);
-        const a = await store.getAgent(agent_id);
-        if (!a || !(await store.hasAccess(a.id, user?.id))) throw new Error(`No access to "${agent_id}".`);
+        const a = await reachable(agent_id, user?.id);
+        if (!a) throw new Error(`No access to "${agent_id}".`);
+        if (!(await store.hasAccess(a.id, user?.id))) throw new Error(`No access to "${agent_id}". Call request_access("${a.id}").`);
         return text(JSON.stringify(await runAgentAction(a, connector, action, args), null, 2).slice(0, 20000));
       }),
     );
@@ -733,7 +759,7 @@ const handler = createMcpHandler(
             role: "user",
             content: {
               type: "text",
-              text: `Help me build an Agents Space agent that handles: ${job}.\n\nInterview me briefly (max 4 questions in one message): who uses it, the rules it must follow, the systems it must act in (their API docs or MCP URL, and how they authenticate), public or private. Then: create_account if I have no key → create_agent with clear instructions → add_context_note for policies/FAQs → create_connector for each system (http action templates or mcp_url; secrets as {{secret.NAME}} placeholders, never inline) → set_connector_secret when I give a key → attach_connector with the minimum actions → test_agent → publish_agent. Show me the endpoint at the end.`,
+              text: `Help me build an Agents Space agent that handles: ${job}.\n\nInterview me briefly (max 4 questions in one message): who uses it, the rules it must follow, the systems it must act in (their API docs or MCP URL, and how they authenticate), visibility (public, listed, restricted or private). Then: create_account if I have no key → create_agent with clear instructions → add_context_note for policies/FAQs → create_connector for each system (http action templates or mcp_url; secrets as {{secret.NAME}} placeholders, never inline) → set_connector_secret when I give a key → attach_connector with the minimum actions → test_agent → publish_agent. Show me the endpoint at the end.`,
             },
           },
         ],
@@ -743,7 +769,7 @@ const handler = createMcpHandler(
   {
     serverInfo: { name: "agents-space", version: "0.2.0" },
     instructions:
-      "Agents Space gives people and businesses a space: their own MCP address that other people's agents call instead of waiting on them. To reach someone (\"ask emma if Saturday works\", \"check @marcos-trattoria for a table\"), call ask_space with their handle. If the user just connected, call my_space first (claim_space if they have none) and help them set it up; allow_access / revoke_access / list_access manage who can use it. Agents Space is also a directory of agents as shareable skills. Find agents (describe_bottleneck, search_agents), use them (use_agent, run_agent_action), request access to private ones (request_access), or build your own in natural language (prompt build_agent, or create_agent → add_context_note → create_connector → attach_connector → test_agent → publish_agent).",
+      "Agents Space gives people and businesses a space: their own MCP address that other people's agents call instead of waiting on them. To reach someone (\"ask emma if Saturday works\", \"check @marcos-trattoria for a table\"), call ask_space with their handle. If the user just connected, call my_space first (claim_space if they have none) and help them set it up; allow_access / revoke_access / list_access manage who can use it. Agents Space is also a directory of agents as shareable skills. Find agents (describe_bottleneck, search_agents), use them (use_agent, run_agent_action), request access to ones that need approval (request_access), or build your own in natural language (prompt build_agent, or create_agent → add_context_note → create_connector → attach_connector → test_agent → publish_agent).",
   },
 );
 

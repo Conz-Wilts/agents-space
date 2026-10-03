@@ -18,6 +18,8 @@ enum AgentKind {
 enum Visibility {
   public
   private
+  listed
+  restricted
 }
 
 enum AgentStatus {

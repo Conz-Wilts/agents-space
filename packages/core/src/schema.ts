@@ -38,6 +38,14 @@ export const ConnectorScopeSchema = z.object({
 });
 export type ConnectorScope = z.infer<typeof ConnectorScopeSchema>;
 
+/**
+ * Who can find and use an agent. `public`: listed, anyone can use. `listed`: listed, info open,
+ * use needs owner approval. `restricted`: listed and readable only for approved people (anyone
+ * else with the link sees the name and can request access). `private`: owner only; invisible.
+ */
+export const VisibilitySchema = z.enum(["public", "listed", "restricted", "private"]);
+export type Visibility = z.infer<typeof VisibilitySchema>;
+
 /** An agent listed in the directory. */
 export const AgentSchema = z.object({
   id: z.string(),
@@ -62,8 +70,7 @@ export const AgentSchema = z.object({
    * served over MCP at `/a/<id>/mcp`. `external`: a listing that points at someone else's endpoint.
    */
   kind: z.enum(["hosted", "external"]).default("external"),
-  /** `public`: anyone can use it. `private`: listed, but use requires owner approval. */
-  visibility: z.enum(["public", "private"]).default("public"),
+  visibility: VisibilitySchema.default("public"),
   /** Drafts are only visible to their owner. */
   status: z.enum(["draft", "published"]).default("published"),
   /** User id of the owner (absent for seed listings). */

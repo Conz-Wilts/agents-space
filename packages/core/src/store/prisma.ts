@@ -3,7 +3,7 @@ import { Prisma, PrismaClient } from "../generated/prisma/client";
 import { matchAgents } from "../match";
 import { AgentSchema, ConnectorActionSchema, type AccessRequest, type Agent, type Bottleneck, type Connector, type ContextNote, type DeviceLogin, type User } from "../schema";
 import type { Store } from "./index";
-import { DEVICE_LOGIN_TTL_MS, RESERVED_HANDLES, SPACE_CATEGORY, handleCandidates, hashKey, newApiKey, newDeviceCode, newUserCode, normalizeHandle, normalizeUserCode, slug } from "./util";
+import { DEVICE_LOGIN_TTL_MS, RESERVED_HANDLES, handleCandidates, hashKey, newApiKey, newDeviceCode, newUserCode, normalizeHandle, normalizeUserCode, slug } from "./util";
 
 const agentInclude = { connectors: true } satisfies Prisma.AgentInclude;
 type AgentRow = Prisma.AgentGetPayload<{ include: typeof agentInclude }>;
@@ -79,6 +79,9 @@ export function createPrismaStore(connectionString: string): Store {
     return r ? toAgent(r) : undefined;
   };
 
+  const approved = async (agentId: string, userId?: string) =>
+    !!userId && !!(await db.accessRequest.findFirst({ where: { agentId, requesterId: userId, status: "approved" }, select: { id: true } }));
+
   const rotateApiKey = async (userId: string) => {
     const apiKey = newApiKey();
     await db.user.update({ where: { id: userId }, data: { keyHash: hashKey(apiKey) } });
@@ -90,8 +93,13 @@ export function createPrismaStore(connectionString: string): Store {
       const rows = await db.agent.findMany({
         where: {
           OR: [
-            { status: "published", NOT: { category: SPACE_CATEGORY, visibility: "private" } },
-            ...(viewerId ? [{ ownerId: viewerId }] : []),
+            { status: "published" as const, visibility: { in: ["public" as const, "listed" as const] } },
+            ...(viewerId
+              ? [
+                  { ownerId: viewerId },
+                  { status: "published" as const, visibility: "restricted" as const, accessRequests: { some: { requesterId: viewerId, status: "approved" as const } } },
+                ]
+              : []),
           ],
           ...(category ? { category: { equals: category, mode: "insensitive" as const } } : {}),
         },
@@ -267,8 +275,16 @@ export function createPrismaStore(connectionString: string): Store {
       if (userId && a.ownerId === userId) return true;
       if (a.status !== "published") return false;
       if (a.visibility === "public") return true;
-      if (!userId) return false;
-      return !!(await db.accessRequest.findFirst({ where: { agentId, requesterId: userId, status: "approved" }, select: { id: true } }));
+      if (a.visibility === "private") return false;
+      return approved(agentId, userId);
+    },
+    async canSeeInfo(agentId, userId) {
+      const a = await db.agent.findUnique({ where: { id: agentId }, select: { ownerId: true, status: true, visibility: true } });
+      if (!a) return false;
+      if (userId && a.ownerId === userId) return true;
+      if (a.status !== "published") return false;
+      if (a.visibility === "public" || a.visibility === "listed") return true;
+      return a.visibility === "restricted" && approved(agentId, userId);
     },
 
     async startDeviceLogin(clientName) {
@@ -322,7 +338,7 @@ export function createPrismaStore(connectionString: string): Store {
       return (await db.bottleneck.findMany({ orderBy: { createdAt: "desc" }, take: 100 })).map(toBottleneck);
     },
     async addBottleneck(input) {
-      const published = (await db.agent.findMany({ where: { status: "published" }, include: agentInclude })).map(toAgent);
+      const published = (await db.agent.findMany({ where: { status: "published", visibility: { in: ["public", "listed"] } }, include: agentInclude })).map(toAgent);
       const matches = matchAgents(published, input.description, input.tools);
       const r = await db.bottleneck.create({ data: { ...input, matchedAgentIds: matches.map((m) => m.agent.id) } });
       return toBottleneck(r);

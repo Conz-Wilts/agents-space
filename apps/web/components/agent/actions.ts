@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { store } from "@agents-space/core";
+import { store, VisibilitySchema, type Visibility } from "@agents-space/core";
 import { getSessionUser } from "@/lib/supabase/server";
 
 async function ownedAgent(agentId: string) {
@@ -11,9 +11,9 @@ async function ownedAgent(agentId: string) {
   return agent;
 }
 
-export async function setVisibility(agentId: string, visibility: "public" | "private") {
+export async function setVisibility(agentId: string, visibility: Visibility) {
   await ownedAgent(agentId);
-  await store.updateAgent(agentId, { visibility });
+  await store.updateAgent(agentId, { visibility: VisibilitySchema.parse(visibility) });
   revalidatePath(`/agents/${agentId}`);
   revalidatePath("/my-agents");
 }
@@ -35,7 +35,8 @@ export async function requestAccess(agentId: string, _prev: RequestState, form: 
   const user = await getSessionUser();
   if (!user) return { error: "Sign in to request access." };
   const agent = await store.getAgent(agentId);
-  if (!agent || agent.status !== "published") return { error: "This agent isn't published." };
+  // An agent the viewer can't learn exists (unknown, draft, private) answers like an unknown id.
+  if (!agent || agent.status !== "published" || (agent.visibility === "private" && agent.ownerId !== user.id)) return { error: "This agent isn't published." };
   if (await store.hasAccess(agentId, user.id)) return { ok: true };
   await store.requestAccess(agentId, user.id, String(form.get("message") ?? "").slice(0, 500));
   revalidatePath(`/agents/${agentId}`);

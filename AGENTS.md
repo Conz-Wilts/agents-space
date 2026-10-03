@@ -40,14 +40,15 @@ Test the MCP: `npx @modelcontextprotocol/inspector` → `http://localhost:3001/m
 ## MCP tools
 Main server `/mcp`. Auth: OAuth — MCP clients sign in with Google through Supabase Auth's OAuth 2.1 server (consent page: web `/oauth/consent`; metadata: `/.well-known/oauth-protected-resource/mcp`) — or an `as_` API key (`Authorization: Bearer` / `?key=`) generated at web `/account`. Sign-in is required when Supabase is configured; otherwise anonymous = read + public use:
 - Account: `create_account`, `whoami`
-- Space: `claim_space` (Google sign-in only; locks the handle), `my_space`; reach someone with `ask_space(handle)`; owner whitelist `allow_access` / `revoke_access` / `list_access`. `/mcp?claim=<handle>` (the URL the landing page hands out) claims it on the first signed-in request
+- Space: `claim_space` (Google sign-in only; locks the handle), `my_space`; reach someone with `ask_space(handle)`; owner whitelist `allow_access` / `revoke_access` / `list_access` (act on your own space; pass `agent_id` to manage any agent you own). `/mcp?claim=<handle>` (the URL the landing page hands out) claims it on the first signed-in request
+- Visibility (every agent, spaces included; `visibility` on `create_agent` / `update_agent` / `publish_agent`): `public` = listed, anyone can use; `listed` = in the directory, info open, use needs approval; `restricted` = hidden from the directory and info, only approved people see or use it (anyone with the id/link sees the name and can `request_access`); `private` = owner only, behaves as if it does not exist (same errors as an unknown id). Spaces default to `restricted`. "Approved" = an `approved` AccessRequest; revoking sets it to `denied`. Drafts stay owner-only.
 - Discover: `describe_bottleneck`, `search_agents`, `list_agents`, `get_agent`
 - Access: `request_access`, `my_access_requests`, `list_access_requests`, `review_access_request`
 - Build: `create_agent` → `add_context_note` (+ `remove_context_note`) → `create_connector` → `set_connector_secret` → `attach_connector` → `test_agent` → `publish_agent` (+ `update_agent`, `detach_connector`, `unpublish_agent`, `my_agents`, `my_connectors`); prompt `build_agent`
 - Use: `use_agent` (skill text + scoped actions), `run_agent_action`
 - `register_agent` — list an *external* agent
 
-Per-agent server `/a/<id>/mcp`: the shareable link. A space is the same server at `/<handle>/mcp` (hosted agent with `id = handle`, category `Space`; private spaces are unlisted). Public agents work anonymously; private ones send clients through OAuth sign-in. Tools = `instructions` + one per scoped action (`<connector>__<action>`); without access only `request_access`.
+Per-agent server `/a/<id>/mcp`: the shareable link. A space is the same server at `/<handle>/mcp` (hosted agent with `id = handle`, category `Space`). Public agents work anonymously; listed/restricted ones send clients through OAuth sign-in; private agents and drafts answer 404 like an unknown id, even before sign-in (owners connect with an API key). Tools = `instructions` + one per scoped action (`<connector>__<action>`); without access only `request_access`.
 
 ## Rules
 - **Next.js 16 / mcp-handler 2 / MCP SDK v2 / zod 4** — APIs differ from older training data. Check `node_modules/next/dist/docs/` and `node_modules/mcp-handler/README.md` before guessing. `registerTool` takes `inputSchema: z.object(...)` (not a raw shape).

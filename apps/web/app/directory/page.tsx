@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { store } from "@agents-space/core";
+import { getSessionUser } from "@/lib/supabase/server";
 import { AppPage } from "@/components/landing/app-page";
 import { AgentTile, EmptyState, Monogram, PageTitle, SectionHead, TileGrid } from "@/components/landing/directory";
 import { d } from "@/components/landing/primitives";
@@ -7,7 +8,9 @@ import { d } from "@/components/landing/primitives";
 export default async function Directory({ searchParams }: PageProps<"/directory">) {
   const { q } = await searchParams;
   const query = typeof q === "string" ? q : undefined;
-  const agents = await store.listAgents({ query });
+  const user = await getSessionUser();
+  // The viewer sees what the directory lists for them: public, listed, and restricted ones they are approved for.
+  const agents = (await store.listAgents({ query, viewerId: user?.id })).filter((a) => a.status === "published" && a.visibility !== "private");
 
   // People = agent owners, most agents first.
   const people = [...agents.reduce((m, a) => m.set(a.owner, (m.get(a.owner) ?? 0) + 1), new Map<string, number>())].sort(

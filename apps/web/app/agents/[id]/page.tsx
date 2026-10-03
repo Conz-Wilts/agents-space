@@ -9,12 +9,16 @@ import { ConnectorCard } from "@/components/connectors/connector-card";
 import { AppPage } from "@/components/landing/app-page";
 import { Monogram } from "@/components/landing/directory";
 import { Eyebrow, Label, d } from "@/components/landing/primitives";
+import { VISIBILITY_LABELS } from "@/components/agent/visibility";
 
 export default async function AgentPage({ params }: PageProps<"/agents/[id]">) {
   const { id } = await params;
   const [agent, user] = await Promise.all([store.getAgent(id), getSessionUser()]);
   const isOwner = !!user && agent?.ownerId === user.id;
-  if (!agent || (agent.status === "draft" && !isOwner)) notFound();
+  // Drafts and private agents don't exist for anyone but the owner.
+  if (!agent || (!isOwner && (agent.status === "draft" || agent.visibility === "private"))) notFound();
+  // A restricted agent shows only its name (and the request button) to people who are not approved.
+  const info = await store.canSeeInfo(agent.id, user?.id);
 
   // Instructions, notes and tools are the agent's skill: only for people who may use it.
   const access = agent.kind === "hosted" && (await store.hasAccess(agent.id, user?.id));
@@ -24,14 +28,14 @@ export default async function AgentPage({ params }: PageProps<"/agents/[id]">) {
         Promise.all(agent.connectors.map(async (s) => ({ scope: s, connector: await store.getConnector(s.connector) }))),
       ])
     : [[], []];
-  // Latest request by this viewer, for the request-access button on private agents.
+  // Latest request by this viewer, for the request-access button on agents that need approval.
   const myRequest =
     !access && user && agent.kind === "hosted"
       ? (await store.listAccessRequests({ requesterId: user.id })).find((r) => r.agentId === agent.id)
       : undefined;
   const needsSetup =
     isOwner && (await Promise.all(connectors.map(async ({ connector: c }) => !c || (await missingSecrets(c)).length > 0))).some(Boolean);
-  const status = agent.status === "draft" ? "Draft" : agent.visibility === "private" ? "Private" : "Public";
+  const status = agent.status === "draft" ? "Draft" : VISIBILITY_LABELS[agent.visibility].replace(" (info only)", "");
 
   return (
     <AppPage>
@@ -44,9 +48,11 @@ export default async function AgentPage({ params }: PageProps<"/agents/[id]">) {
         </Link>
         <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
           <div className="flex min-w-0 flex-col gap-6 lg:max-w-[820px]">
-            <Eyebrow className="r">
-              {[agent.category, agent.protocol, agent.kind === "hosted" ? "Hosted" : "External"].filter(Boolean).join(" · ")}
-            </Eyebrow>
+            {info && (
+              <Eyebrow className="r">
+                {[agent.category, agent.protocol, agent.kind === "hosted" ? "Hosted" : "External"].filter(Boolean).join(" · ")}
+              </Eyebrow>
+            )}
             <h1
               className="r-mask text-[40px] leading-[1.02] font-medium tracking-[-1.6px] break-words text-ink sm:text-[52px] lg:text-[64px] lg:leading-[64px] lg:tracking-[-2.6px]"
               style={d(100)}
@@ -55,18 +61,22 @@ export default async function AgentPage({ params }: PageProps<"/agents/[id]">) {
                 <span>{agent.name}</span>
               </span>
             </h1>
-            <p className="r text-[17px] leading-[26px] text-muted sm:text-[19px] sm:leading-[28px]" style={d(250)}>
-              {agent.tagline}
-            </p>
-            <div className="r flex flex-wrap items-center gap-3" style={d(350)}>
-              <span className="flex items-center gap-2">
-                <Monogram name={agent.owner} size={28} />
-                <span className="text-[15px] text-ink">{agent.owner}</span>
-              </span>
-              <span className="rounded-full px-2.5 py-1 font-mono text-[11px] uppercase tracking-[1px] text-ink outline outline-1 -outline-offset-1 outline-edge">
-                {status}
-              </span>
-            </div>
+            {info && (
+              <>
+                <p className="r text-[17px] leading-[26px] text-muted sm:text-[19px] sm:leading-[28px]" style={d(250)}>
+                  {agent.tagline}
+                </p>
+                <div className="r flex flex-wrap items-center gap-3" style={d(350)}>
+                  <span className="flex items-center gap-2">
+                    <Monogram name={agent.owner} size={28} />
+                    <span className="text-[15px] text-ink">{agent.owner}</span>
+                  </span>
+                  <span className="rounded-full px-2.5 py-1 font-mono text-[11px] uppercase tracking-[1px] text-ink outline outline-1 -outline-offset-1 outline-edge">
+                    {status}
+                  </span>
+                </div>
+              </>
+            )}
           </div>
           {isOwner && (
             <div className="r lg:shrink-0" style={d(450)}>
@@ -112,13 +122,14 @@ export default async function AgentPage({ params }: PageProps<"/agents/[id]">) {
           </div>
         ) : (
           <div className="flex max-w-2xl flex-col gap-6">
-            <Label className="r text-ink">About</Label>
-            {agent.description && (
+            <Label className="r text-ink">{info ? "About" : "Access"}</Label>
+            {!info && <p className="r text-[17px] leading-[27px] text-muted">The owner shares this agent with specific people. Request access to see and use it.</p>}
+            {info && agent.description && (
               <p className="r text-[17px] leading-[27px] whitespace-pre-wrap text-ink" style={d(100)}>
                 {agent.description}
               </p>
             )}
-            {agent.tools.length > 0 && (
+            {info && agent.tools.length > 0 && (
               <ul className="r flex flex-wrap gap-1.5" style={d(200)}>
                 {agent.tools.map((t) => (
                   <li key={t} className="rounded-md bg-white px-2 py-1 text-[13px] text-ink outline outline-1 -outline-offset-1 outline-edge">
@@ -129,7 +140,7 @@ export default async function AgentPage({ params }: PageProps<"/agents/[id]">) {
             )}
             <div className="r" style={d(300)}>
               {agent.kind === "external" ? (
-                <p className="text-[15px] text-muted">Runs on its owner&apos;s servers, so there&apos;s nothing more to show here.</p>
+                info && <p className="text-[15px] text-muted">Runs on its owner&apos;s servers, so there&apos;s nothing more to show here.</p>
               ) : user ? (
                 <RequestAccess agentId={agent.id} status={myRequest?.status === "approved" ? undefined : myRequest?.status} />
               ) : (

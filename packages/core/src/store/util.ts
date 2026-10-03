@@ -16,11 +16,8 @@ export const RESERVED_HANDLES = new Set([
   "support", "system", "terms", "www",
 ]);
 
-/** Category of a person's or business's space (the hosted agent at `/<handle>/mcp`). Private spaces are unlisted. */
+/** Category of a person's or business's space (the hosted agent at `/<handle>/mcp`). */
 export const SPACE_CATEGORY = "Space";
-
-/** Shown in the directory: everything but private spaces, which are reached by address only. */
-export const listed = (a: { category: string; visibility: string }) => !(a.category === SPACE_CATEGORY && a.visibility === "private");
 
 export const newApiKey = () => `as_${randomBytes(24).toString("base64url")}`;
 

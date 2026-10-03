@@ -23,7 +23,7 @@ People are the bottleneck: questions and requests wait on them. A space answers 
 ## Reach someone
 
 - \`ask_space(handle)\`: load someone's space as the signed-in user, e.g. \`ask_space("@emma")\` for "ask Emma if Saturday works". Returns their rules, shared context and the actions you may run; act with \`run_agent_action\` (agent_id = the handle).
-- Spaces are private by default. If you aren't allowed yet, \`request_access\` (agent_id = the handle) and the owner approves or declines.
+- Spaces are restricted by default: only people the owner approves can see or call them. If you aren't allowed yet, \`request_access\` (agent_id = the handle) and the owner approves or declines.
 - Respect the space's rules. If a request needs the owner's decision, tell your user instead of acting.
 - Public spaces and agents are listed in the directory: \`search_agents\`, or ${web}/directory
 
@@ -37,7 +37,7 @@ People are the bottleneck: questions and requests wait on them. A space answers 
 
 ## Direct addresses
 
-Each space also has its own MCP address, ${mcpOrigin}/<handle>/mcp, for agents outside Agent Space. Public spaces answer anonymously; private ones require sign-in and the owner's permission.
+Each space also has its own MCP address, ${mcpOrigin}/<handle>/mcp, for agents outside Agent Space. Public spaces answer anonymously; the others require sign-in and the owner's permission.
 
 ## Links
 

@@ -21,7 +21,7 @@ import { createPrismaStore } from "./prisma";
  * - In-memory seeded store otherwise (local hacking; resets on restart, not shared between apps).
  */
 export interface Store {
-  /** Published agents plus the viewer's own drafts. Private spaces are left out (unlisted). */
+  /** Published public + listed agents, the viewer's own agents (any mode, drafts), and restricted ones the viewer is approved for. */
   listAgents(opts?: { query?: string; category?: string; viewerId?: string }): Promise<Agent[]>;
   getAgent(id: string): Promise<Agent | undefined>;
   /** Id from the name (never a user's handle or a reserved one), or `opts.id` exactly (throws if taken). */
@@ -57,7 +57,10 @@ export interface Store {
   requestAccess(agentId: string, requesterId: string, message?: string): Promise<AccessRequest>;
   listAccessRequests(opts: { ownerId?: string; requesterId?: string }): Promise<AccessRequest[]>;
   decideAccessRequest(id: string, status: "approved" | "denied"): Promise<AccessRequest>;
+  /** May use the agent: owner; anyone if public; approved users if listed/restricted; nobody else (drafts and private: owner only). */
   hasAccess(agentId: string, userId?: string): Promise<boolean>;
+  /** May read the agent's info: owner; anyone if public/listed; approved users if restricted; nobody else. */
+  canSeeInfo(agentId: string, userId?: string): Promise<boolean>;
 
   /** Begins a CLI sign-in. The device code is returned once; only its hash is kept. Also purges expired rows. */
   startDeviceLogin(clientName?: string): Promise<{ deviceCode: string; userCode: string; expiresAt: string }>;

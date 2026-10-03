@@ -5,6 +5,7 @@ import { decideRequest } from "@/components/agent/actions";
 import { AppPage } from "@/components/landing/app-page";
 import { AgentTile, EmptyState, Monogram, PageTitle, SectionHead, TileGrid } from "@/components/landing/directory";
 import { d } from "@/components/landing/primitives";
+import { VISIBILITY_BADGE } from "@/components/agent/visibility";
 
 export default async function MyAgents() {
   const user = await getSessionUser();
@@ -113,7 +114,7 @@ function AgentGrid({ title, agents, empty }: { title: string; agents: Agent[]; e
             <li key={a.id}>
               <AgentTile
                 agent={a}
-                badge={a.status === "draft" ? "Draft" : a.visibility === "private" ? "Private" : undefined}
+                badge={a.status === "draft" ? "Draft" : VISIBILITY_BADGE[a.visibility]}
                 delay={150 + Math.min(i, 8) * 70}
               />
             </li>

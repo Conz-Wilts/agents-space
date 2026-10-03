@@ -33,8 +33,8 @@ export async function getSpace(user: User): Promise<Agent | undefined> {
 }
 
 /**
- * Claim `handle` for a signed-in user and create their space (private, so only people they
- * approve can call it). Idempotent for the handle they already claimed.
+ * Claim `handle` for a signed-in user and create their space (restricted: only people they
+ * approve can see or call it). Idempotent for the handle they already claimed.
  */
 export async function claimSpace(user: User, handle: string, endpointFor: (id: string) => string): Promise<{ user: User; space: Agent; created: boolean }> {
   if (!user.authId) throw new Error("Sign in with Google to claim a space. Accounts made with only an API key can't claim one.");
@@ -62,7 +62,7 @@ export async function claimSpace(user: User, handle: string, endpointFor: (id: s
         ownerId: owner.id,
         pricing: "free",
         kind: "hosted",
-        visibility: "private",
+        visibility: "restricted",
         status: "published",
         instructions: STARTER_RULES,
       },

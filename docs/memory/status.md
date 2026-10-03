@@ -8,7 +8,8 @@ _Last updated: 2026-10-03_
 - [x] Seed data: 5 example external agents
 - [x] Accounts + API keys; anonymous read
 - [x] Natural-language agent builder over MCP: create → context notes → connectors (REST or wrapped MCP) → secrets → scoped attach → test → publish
-- [x] Public / private agents, access requests + owner review
+- [x] Four visibility modes (public / listed / restricted / private) with `canSeeInfo` + `hasAccess` in both stores; `allow_access` / `revoke_access` / `list_access` take an optional `agent_id`; web owner control has four options. Migrations `20261003210912_visibility_modes.sql` (adds enum values) and `20261003210913_visibility_backfill.sql` (old private → listed, spaces → restricted) are NOT applied to the remote DB yet. Driven on the in-memory MCP only; the web owner controls and agent page were read, not driven (no Supabase locally)
+- [x] Public / private agents, access requests + owner review (superseded by the line above)
 - [x] Use agents: `use_agent` + `run_agent_action` on `/mcp`, and per-agent MCP server at `/a/<id>/mcp`
 - [x] Own connector + context system (no third-party runtime): declarative HTTP / remote-MCP actions, `{{args.x}}` / `{{secret.X}}` templates, host allowlist + private-network block, no redirects, AES-256-GCM secrets, secret redaction
 - [x] Supabase Postgres via Prisma 7 (`packages/core/prisma/schema.prisma`), in-memory fallback without `DATABASE_URL`
@@ -37,7 +38,7 @@ _Last updated: 2026-10-03_
 - [ ] Create the Supabase project, set `DATABASE_URL` / `DIRECT_URL` / `CONNECTOR_SECRETS_KEY` (local + Vercel), `pnpm db:push && pnpm db:seed` — switch to `db:migrate` migrations before real users
 - [x] `apps/web` deployed: Vercel project `agents-space-web` (team SUPAYAPPERS, root dir `apps/web`, prod env set) → https://agents-space-web.vercel.app; MCP on `agents-space-mcp` → https://agents-space-mcp.vercel.app (CLI deploys, no git integration yet)
 - [ ] Deploy `apps/mcp` as its own Vercel project; set `PUBLIC_MCP_ORIGIN`, `NEXT_PUBLIC_MCP_URL`
-- [ ] Web: edit instructions / notes, publish/unpublish, invite a person by handle
+- [ ] Web: edit instructions / notes, publish/unpublish, invite a person by handle (MCP covers inviting and revoking via `allow_access` / `revoke_access` with `agent_id`; the web has no UI for it)
 - [ ] Supabase dashboard: Google provider, redirect URLs, OAuth Server (path `/oauth/consent`, dynamic registration) — then test sign-in from Claude / MCP Inspector end to end (**not yet tested live**: no `NEXT_PUBLIC_SUPABASE_URL` set)
 - [ ] Rate limiting on writes
 - [ ] Embedding-based matching
@@ -46,6 +47,7 @@ _Last updated: 2026-10-03_
 - [ ] Notify owners of new access requests (today they only see them in `my_space` / `list_access`)
 
 ## Known gaps
+- Ids and handles are a public namespace: id collisions (suffixing in `register_agent`/`create_agent`, `/api/handles/<h>`, `claim_space`) reveal that an id is taken, even by a private or draft agent, but nothing about it.
 - Privacy, Security, X links on the landing are `#` placeholders.
 - No web (non-MCP) claim path yet: someone who won't install an MCP can't claim a space from the site.
 - `update_agent` can change a space's category, which makes it stop being a space.

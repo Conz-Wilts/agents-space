@@ -2,7 +2,7 @@ import { seedAgents } from "../seed";
 import { matchAgents } from "../match";
 import { AgentSchema, type AccessRequest, type Bottleneck, type Connector, type ContextNote, type DeviceLogin, type User } from "../schema";
 import type { Store } from "./index";
-import { DEVICE_LOGIN_TTL_MS, RESERVED_HANDLES, handleCandidates, hashKey, listed, newApiKey, newDeviceCode, newUserCode, normalizeHandle, normalizeUserCode, slug } from "./util";
+import { DEVICE_LOGIN_TTL_MS, RESERVED_HANDLES, handleCandidates, hashKey, newApiKey, newDeviceCode, newUserCode, normalizeHandle, normalizeUserCode, slug } from "./util";
 
 const now = () => new Date().toISOString();
 
@@ -22,6 +22,9 @@ export function createMemoryStore(): Store {
     return [...deviceLogins.values()].find((d) => d.userCode === c && d.expiresAt > now());
   };
 
+  const approved = (agentId: string, userId?: string) =>
+    !!userId && requests.some((r) => r.agentId === agentId && r.requesterId === userId && r.status === "approved");
+
   const rotateApiKey = async (userId: string) => {
     const user = users.find((u) => u.id === userId);
     if (!user) throw new Error("No such user.");
@@ -32,7 +35,11 @@ export function createMemoryStore(): Store {
 
   return {
     async listAgents({ query, category, viewerId } = {}) {
-      let all = agents.filter((a) => (a.status === "published" && listed(a)) || (viewerId && a.ownerId === viewerId));
+      let all = agents.filter(
+        (a) =>
+          (viewerId && a.ownerId === viewerId) ||
+          (a.status === "published" && (a.visibility === "public" || a.visibility === "listed" || (a.visibility === "restricted" && approved(a.id, viewerId)))),
+      );
       if (category) all = all.filter((a) => a.category.toLowerCase() === category.toLowerCase());
       if (query) return matchAgents(all, query, [], all.length).map((r) => r.agent);
       return all;
@@ -156,7 +163,16 @@ export function createMemoryStore(): Store {
       if (userId && a.ownerId === userId) return true;
       if (a.status !== "published") return false;
       if (a.visibility === "public") return true;
-      return !!userId && requests.some((r) => r.agentId === agentId && r.requesterId === userId && r.status === "approved");
+      if (a.visibility === "private") return false;
+      return approved(agentId, userId);
+    },
+    async canSeeInfo(agentId, userId) {
+      const a = agents.find((x) => x.id === agentId);
+      if (!a) return false;
+      if (userId && a.ownerId === userId) return true;
+      if (a.status !== "published") return false;
+      if (a.visibility === "public" || a.visibility === "listed") return true;
+      return a.visibility === "restricted" && approved(agentId, userId);
     },
 
     async startDeviceLogin(clientName) {
@@ -198,7 +214,7 @@ export function createMemoryStore(): Store {
       return [...bottlenecks].reverse();
     },
     async addBottleneck(input) {
-      const published = agents.filter((a) => a.status === "published");
+      const published = agents.filter((a) => a.status === "published" && (a.visibility === "public" || a.visibility === "listed"));
       const matches = matchAgents(published, input.description, input.tools);
       const b: Bottleneck = { ...input, id: crypto.randomUUID(), matchedAgentIds: matches.map((m) => m.agent.id), createdAt: now() };
       bottlenecks.push(b);
