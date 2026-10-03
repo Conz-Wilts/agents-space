@@ -115,7 +115,13 @@ async function spaceStatus(user: User, space: Agent) {
     "1. Share what it can use: add_context_note (availability, prices, policies, FAQs), create_table for data it should keep (bookings, requests, leads), or create_connector + attach_connector for a calendar or other system.",
     "2. Set your rules in plain words with update_agent instructions: what it answers alone, what it asks you first, what it never touches.",
     `3. Decide who can reach you: allow_access("@their-handle") (list_access, revoke_access). Their agents then call ask_space("${space.id}"). Visibility is "${space.visibility}"; change it with update_agent visibility (public, listed, restricted, private).`,
-    "4. Charge for it (optional): enable_payments to connect Stripe, then set_price (e.g. a 'cleaning' at 800 MXN). Callers' agents get a checkout link with request_payment once a time is picked; my_payments shows what came in.",
+    ...(!paymentsEnabled()
+      ? []
+      : !payouts?.ready
+        ? ["4. Charge for it (optional): enable_payments to connect Stripe, then set_price (e.g. a 'consultation' at 50 USD). Callers' agents get a checkout link with request_payment once a time is picked."]
+        : !prices.length
+          ? ["4. Payments are on: set_price for what you charge (e.g. a 'consultation' at 50 USD), and say in your rules when to ask for payment."]
+          : ["4. Payments are on: my_payments shows what came in; set_price / remove_price to change prices."]),
   ].join("\n");
 }
 
