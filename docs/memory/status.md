@@ -38,7 +38,6 @@ _Last updated: 2026-10-03_
 - [ ] Per-caller usage/metering; let owners revoke an approved grant
 
 ## Known gaps
-- The test space `scarranca` stored `endpoint = http://localhost:3001/scarranca/mcp` (claimed locally). `my_space` builds the address from the serving origin, but web pages showing `endpoint` will show localhost until the row is fixed.
 - Privacy, Security, X links on the landing are `#` placeholders.
 - No web (non-MCP) claim path yet: someone who won't install an MCP can't claim a space from the site.
 - `update_agent` can change a space's category, which makes it stop being a space.
