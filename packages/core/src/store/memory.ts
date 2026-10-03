@@ -1,7 +1,7 @@
 import { matchAgents } from "../match";
 import { AgentSchema, type Agent, type AccessRequest, type AgentSchedule, type Bottleneck, type Connector, type ContextNote, type DataTable, type DeviceLogin, type Model, type Payment, type Price, type TableRow, type User } from "../schema";
 import type { Store } from "./index";
-import { DEVICE_LOGIN_TTL_MS, RESERVED_HANDLES, handleCandidates, hashKey, newApiKey, newDeviceCode, newUserCode, normalizeHandle, normalizeUserCode, SPACE_CATEGORY, slug, spaceStatus } from "./util";
+import { DEVICE_LOGIN_TTL_MS, RESERVED_HANDLES, handleCandidates, hashKey, newApiKey, newDeviceCode, newUserCode, normalizeHandle, normalizeUserCode, SPACE_CATEGORY, slug, spaceStatus, infoGate, useGate, passes } from "./util";
 
 const now = () => new Date().toISOString();
 
@@ -53,6 +53,12 @@ export function createMemoryStore(): Store {
     },
     async getAgent(id) {
       return agents.find((a) => a.id === id);
+    },
+    async agentsOf(ownerId, { viewerId, category } = {}) {
+      return agents
+        .filter((a) => a.ownerId === ownerId && (!category || a.category.toLowerCase() === category.toLowerCase()))
+        .filter((a) => passes(infoGate(a, viewerId), approved(a.id, viewerId)))
+        .map((a) => ({ agent: a, access: passes(useGate(a, viewerId), approved(a.id, viewerId)) }));
     },
     async addAgent(input, opts) {
       let id = opts?.id ?? (slug(input.name) || crypto.randomUUID());
@@ -340,21 +346,11 @@ export function createMemoryStore(): Store {
     },
     async hasAccess(agentId, userId) {
       const a = agents.find((x) => x.id === agentId);
-      if (!a) return false;
-      if (userId && a.ownerId === userId) return true;
-      if (a.status !== "published" || a.mode === "scheduled") return false;
-      if (a.visibility === "public") return true;
-      if (a.visibility === "private") return false;
-      return approved(agentId, userId);
+      return !!a && passes(useGate(a, userId), approved(agentId, userId));
     },
     async canSeeInfo(agentId, userId) {
       const a = agents.find((x) => x.id === agentId);
-      if (!a) return false;
-      if (userId && a.ownerId === userId) return true;
-      if (a.status !== "published") return false;
-      if (a.mode === "scheduled") return false;
-      if (a.visibility === "public" || a.visibility === "listed") return true;
-      return a.visibility === "restricted" && approved(agentId, userId);
+      return !!a && passes(infoGate(a, userId), approved(agentId, userId));
     },
 
     async startDeviceLogin(clientName) {

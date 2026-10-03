@@ -34,7 +34,29 @@ export function spaceStatus(
   return "request access";
 }
 
-export const newApiKey = () => `as_${randomBytes(24).toString("base64url")}`;
+/** The fields the visibility rules look at. */
+type Gated = { ownerId?: string | null; status: string; visibility: string; mode?: string | null };
+/** A rule's answer before the AccessRequest lookup: yes, no, or only with an approved request. */
+export type Gate = boolean | "if approved";
+export const passes = (g: Gate, approved: boolean) => g === true || (g === "if approved" && approved);
+
+/** canSeeInfo: owner always; otherwise published skills that are public/listed, or restricted and approved. */
+export function infoGate(a: Gated, viewerId: string | undefined): Gate {
+  if (viewerId && a.ownerId === viewerId) return true;
+  if (a.status !== "published" || a.mode === "scheduled") return false;
+  if (a.visibility === "public" || a.visibility === "listed") return true;
+  return a.visibility === "restricted" ? "if approved" : false;
+}
+
+/** hasAccess: owner always; otherwise published skills that are public, or listed/restricted and approved. */
+export function useGate(a: Gated, viewerId: string | undefined): Gate {
+  if (viewerId && a.ownerId === viewerId) return true;
+  if (a.status !== "published" || a.mode === "scheduled") return false;
+  if (a.visibility === "public") return true;
+  return a.visibility === "listed" || a.visibility === "restricted" ? "if approved" : false;
+}
+
+export const newApiKey =() => `as_${randomBytes(24).toString("base64url")}`;
 
 /** Handle candidates for a new web sign-in: from the name or email, then with random suffixes. */
 export function handleCandidates(auth: { email?: string; name?: string }): string[] {

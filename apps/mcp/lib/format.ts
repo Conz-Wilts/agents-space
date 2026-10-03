@@ -25,8 +25,14 @@ const VISIBILITY_FLAG: Record<Visibility, string> = {
   private: "private (owner only)",
 };
 
-export const fmt = (a: Agent, access?: boolean) => {
-  const flags = [a.kind, a.mode === "scheduled" ? "scheduled: runs for its owner" : VISIBILITY_FLAG[a.visibility], a.status === "draft" ? "DRAFT" : null, access === false ? "request access" : null]
+/** One agent as a bullet. `access` false adds "request access"; with `open`, true adds "open" (list_users wording). */
+export const fmt = (a: Agent, access?: boolean, { open = false }: { open?: boolean } = {}) => {
+  const flags = [
+    a.kind,
+    a.mode === "scheduled" ? "scheduled: runs for its owner" : VISIBILITY_FLAG[a.visibility],
+    a.status === "draft" ? "DRAFT" : null,
+    access === false ? "request access" : open && access ? "open" : null,
+  ]
     .filter(Boolean)
     .join(" · ");
   return `• ${a.name} (${a.id}) — ${a.tagline}\n  ${flags} | by ${a.owner} | tools: ${a.tools.join(", ") || "—"} | pricing: ${a.pricing}${a.endpoint ? `\n  endpoint: ${a.endpoint}` : ""}`;

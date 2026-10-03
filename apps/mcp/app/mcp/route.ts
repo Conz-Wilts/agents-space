@@ -565,11 +565,27 @@ const handler = createMcpHandler(
       "list_agents",
       {
         title: "List agents",
-        description: "List every agent in the directory, optionally filtered by category.",
-        inputSchema: z.object({ category: z.string().optional() }),
+        description:
+          "List every agent in the directory, optionally filtered by category. Pass `owner` (a handle like 'emma' or '@emma') to see which agents that person has: only the ones you're allowed to see, each marked open (use it now) or request access.",
+        inputSchema: z.object({
+          category: z.string().optional(),
+          owner: z.string().optional().describe("A person's handle, with or without '@', case-insensitive"),
+        }),
       },
-      safe(async ({ category }, ctx) => {
+      safe(async ({ category, owner }, ctx) => {
         const user = await currentUser(ctx);
+        if (owner !== undefined) {
+          const h = plainHandle(owner);
+          const who = h ? await store.userByHandle(h) : undefined;
+          const rows = who ? await store.agentsOf(who.id, { viewerId: user?.id, category }) : [];
+          // An unknown handle and one with nothing visible to you answer the same, so hidden agents leave no trace.
+          if (!rows.length) return text(`No agents from @${h}${category ? ` in ${category}` : ""} that you can see.`);
+          const hints = [
+            rows.some((r) => r.access) && 'open: use_agent("<id>")',
+            rows.some((r) => !r.access) && 'request access: request_access("<id>")',
+          ].filter(Boolean);
+          return text(`Agents by @${h}:\n\n${rows.map((r) => fmt(r.agent, r.access, { open: true })).join("\n\n")}\n\n${hints.join(" · ")}`);
+        }
         const rows = await withAccess(await store.listAgents({ category, viewerId: user?.id }), user?.id);
         return text(rows.map((r) => fmt(r.agent, r.access)).join("\n\n") || "Directory is empty.");
       }),
@@ -629,6 +645,7 @@ const handler = createMcpHandler(
         const hints = [
           [...statuses.values()].includes("open") && 'open: ask_space("<handle>")',
           [...statuses.values()].includes("request access") && 'request access: request_access("<handle>")',
+          'their agents: list_agents(owner: "<handle>")',
         ].filter(Boolean);
         return text(
           [lines.join("\n"), hints.length ? `\n${hints.join(" · ")}` : "", found.length > limit ? `\nMore: call list_users again with cursor "${page[page.length - 1].handle}".` : ""].join(""),
@@ -1192,7 +1209,7 @@ const handler = createMcpHandler(
   {
     serverInfo: { name: "agents-space", version: "0.2.0" },
     instructions:
-      "Agents Space gives people and businesses a space: their own MCP address that other people's agents call instead of waiting on them. To reach someone (\"ask emma if Saturday works\", \"check @marcos-trattoria for a table\"), call ask_space with their handle. If the user just connected, call my_space first (claim_space if they have none) and help them set it up; allow_access / revoke_access / list_access manage who can use it; enable_payments + set_price let it charge callers. When a space lists Prices, request_payment returns a Stripe checkout link for your user and check_payment confirms it. Agents Space is also a directory of agents as shareable skills. Find people with list_users. Find agents (describe_bottleneck, search_agents), use them (use_agent, run_agent_action), request access to ones that need approval (request_access), or build your own in natural language (prompt build_agent, or create_agent → add_context_note → create_table → create_connector or connect_app → attach_connector → test_agent → publish_agent). Agents keep their own data in tables (create_table; built-in 'outputs'); no connector is needed to store data. An agent is either a skill other people's agents call (mode skill) or works for its owner on a schedule (mode scheduled → schedule_agent, run_schedule_now, schedule_runs); add_model / set_agent_model pick the LLM it runs on.",
+      "Agents Space gives people and businesses a space: their own MCP address that other people's agents call instead of waiting on them. To reach someone (\"ask emma if Saturday works\", \"check @marcos-trattoria for a table\"), call ask_space with their handle. If the user just connected, call my_space first (claim_space if they have none) and help them set it up; allow_access / revoke_access / list_access manage who can use it; enable_payments + set_price let it charge callers. When a space lists Prices, request_payment returns a Stripe checkout link for your user and check_payment confirms it. Agents Space is also a directory of agents as shareable skills. Find people with list_users; list_agents(owner: \"<handle>\") shows the agents a person has that you may see. Find agents (describe_bottleneck, search_agents), use them (use_agent, run_agent_action), request access to ones that need approval (request_access), or build your own in natural language (prompt build_agent, or create_agent → add_context_note → create_table → create_connector or connect_app → attach_connector → test_agent → publish_agent). Agents keep their own data in tables (create_table; built-in 'outputs'); no connector is needed to store data. An agent is either a skill other people's agents call (mode skill) or works for its owner on a schedule (mode scheduled → schedule_agent, run_schedule_now, schedule_runs); add_model / set_agent_model pick the LLM it runs on.",
   },
 );
 

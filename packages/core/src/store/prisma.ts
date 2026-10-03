@@ -3,7 +3,7 @@ import { Prisma, PrismaClient } from "../generated/prisma/client";
 import { matchAgents } from "../match";
 import { ModelSchema, AgentSchema, AgentScheduleSchema, CallerAccessSchema, ConnectorActionSchema, TableColumnSchema, type AccessRequest, type Agent, type AgentSchedule, type Bottleneck, type Connector, type ContextNote, type DataTable, type DeviceLogin, type Model, type Payment, type Price, type TableRow, type User } from "../schema";
 import type { Store } from "./index";
-import { DEVICE_LOGIN_TTL_MS, RESERVED_HANDLES, handleCandidates, hashKey, newApiKey, newDeviceCode, newUserCode, normalizeHandle, normalizeUserCode, SPACE_CATEGORY, slug, spaceStatus } from "./util";
+import { DEVICE_LOGIN_TTL_MS, RESERVED_HANDLES, handleCandidates, hashKey, newApiKey, newDeviceCode, newUserCode, normalizeHandle, normalizeUserCode, SPACE_CATEGORY, slug, spaceStatus, infoGate, useGate, passes } from "./util";
 
 const agentInclude = { connectors: true } satisfies Prisma.AgentInclude;
 type AgentRow = Prisma.AgentGetPayload<{ include: typeof agentInclude }>;
@@ -172,6 +172,38 @@ export function createPrismaStore(connectionString: string): Store {
       return all;
     },
     getAgent,
+    async agentsOf(ownerId, { viewerId, category } = {}) {
+      const own = !!viewerId && viewerId === ownerId;
+      // Visibility is filtered in the query; the gates below re-apply the same rules (shared with hasAccess/canSeeInfo).
+      const rows = await db.agent.findMany({
+        where: {
+          ownerId,
+          ...(category ? { category: { equals: category, mode: "insensitive" as const } } : {}),
+          ...(own
+            ? {}
+            : {
+                status: "published" as const,
+                mode: "skill",
+                OR: [
+                  { visibility: { in: ["public" as const, "listed" as const] } },
+                  ...(viewerId ? [{ visibility: "restricted" as const, accessRequests: { some: { requesterId: viewerId, status: "approved" as const } } }] : []),
+                ],
+              }),
+        },
+        include: agentInclude,
+        orderBy: { createdAt: "asc" },
+      });
+      const gated = own ? [] : rows.filter((r) => r.visibility === "listed" || r.visibility === "restricted").map((r) => r.id);
+      const approvedIds = new Set(
+        viewerId && gated.length
+          ? (await db.accessRequest.findMany({ where: { requesterId: viewerId, status: "approved", agentId: { in: gated } }, select: { agentId: true } })).map((r) => r.agentId)
+          : [],
+      );
+      return rows
+        .map(toAgent)
+        .filter((a) => passes(infoGate(a, viewerId), approvedIds.has(a.id)))
+        .map((a) => ({ agent: a, access: passes(useGate(a, viewerId), approvedIds.has(a.id)) }));
+    },
     async addAgent(input, opts) {
       const parsed = AgentSchema.parse({ ...input, id: "_", createdAt: new Date().toISOString() });
       let id = opts?.id ?? (slug(parsed.name) || crypto.randomUUID());
@@ -499,20 +531,14 @@ export function createPrismaStore(connectionString: string): Store {
     async hasAccess(agentId, userId) {
       const a = await db.agent.findUnique({ where: { id: agentId }, select: { ownerId: true, status: true, visibility: true, mode: true } });
       if (!a) return false;
-      if (userId && a.ownerId === userId) return true;
-      if (a.status !== "published" || a.mode === "scheduled") return false;
-      if (a.visibility === "public") return true;
-      if (a.visibility === "private") return false;
-      return approved(agentId, userId);
+      const g = useGate(a, userId);
+      return g === "if approved" ? approved(agentId, userId) : g;
     },
     async canSeeInfo(agentId, userId) {
       const a = await db.agent.findUnique({ where: { id: agentId }, select: { ownerId: true, status: true, visibility: true, mode: true } });
       if (!a) return false;
-      if (userId && a.ownerId === userId) return true;
-      if (a.mode === "scheduled") return false;
-      if (a.status !== "published") return false;
-      if (a.visibility === "public" || a.visibility === "listed") return true;
-      return a.visibility === "restricted" && approved(agentId, userId);
+      const g = infoGate(a, userId);
+      return g === "if approved" ? approved(agentId, userId) : g;
     },
 
     async startDeviceLogin(clientName) {

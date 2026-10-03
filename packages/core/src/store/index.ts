@@ -31,6 +31,12 @@ import { createPrismaStore } from "./prisma";
 export interface Store {
   /** Published public + listed agents, the viewer's own agents (any mode, drafts), and restricted ones the viewer is approved for. */
   listAgents(opts?: { query?: string; category?: string; viewerId?: string }): Promise<Agent[]>;
+  /**
+   * Agents owned by `ownerId` that `viewerId` may see (canSeeInfo rules: public/listed, restricted only if approved,
+   * private/drafts/scheduled only for the owner), oldest first, each with whether the viewer may use it (hasAccess).
+   * Approvals are looked up in one batch.
+   */
+  agentsOf(ownerId: string, opts?: { viewerId?: string; category?: string }): Promise<{ agent: Agent; access: boolean }[]>;
   getAgent(id: string): Promise<Agent | undefined>;
   /** Id from the name (never a user's handle or a reserved one), or `opts.id` exactly (throws if taken). */
   addAgent(input: NewAgentInput, opts?: { id?: string }): Promise<Agent>;
