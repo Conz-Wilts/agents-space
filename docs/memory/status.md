@@ -29,6 +29,8 @@ _Last updated: 2026-10-03_
 
 - [x] Claim your space: landing form checks the handle (`/api/handles/<h>`) and shows the MCP install command with `?claim=<handle>` (Claude Code via `npx agents-space login --claim <handle>`, Claude / Cursor / VS Code via the URL). The first signed-in (Google) request claims it: handle set, private space created at `/<handle>/mcp`. Also `claim_space` / `my_space` tools. Tested end to end locally against the Supabase DB (2026-10-03): device login → auto-claim of `scarranca` → `my_space`, handle lock, availability, unlisted, `/scarranca/mcp` 401 anonymous / works for owner. The npm `agents-space` CLI (0.1.0) needs a new publish for `--claim`
 
+- [x] One MCP to reach anyone: `ask_space("@emma")` loads Emma's space as the signed-in user (rules, context, allowed actions) or says how to get access; owners whitelist with `allow_access` / `revoke_access` / `list_access` (an allow = an approved AccessRequest, no schema change). Tested against the Supabase DB with a throwaway account (deleted)
+
 ## Next
 - [ ] Create the Supabase project, set `DATABASE_URL` / `DIRECT_URL` / `CONNECTOR_SECRETS_KEY` (local + Vercel), `pnpm db:push && pnpm db:seed` — switch to `db:migrate` migrations before real users
 - [x] `apps/web` deployed: Vercel project `agents-space-web` (team SUPAYAPPERS, root dir `apps/web`, prod env set) → https://agents-space-web.vercel.app; MCP on `agents-space-mcp` → https://agents-space-mcp.vercel.app (CLI deploys, no git integration yet)
@@ -37,7 +39,9 @@ _Last updated: 2026-10-03_
 - [ ] Supabase dashboard: Google provider, redirect URLs, OAuth Server (path `/oauth/consent`, dynamic registration) — then test sign-in from Claude / MCP Inspector end to end (**not yet tested live**: no `NEXT_PUBLIC_SUPABASE_URL` set)
 - [ ] Rate limiting on writes
 - [ ] Embedding-based matching
-- [ ] Per-caller usage/metering; let owners revoke an approved grant
+- [ ] Per-caller usage/metering
+- [ ] "Ask me first": hold requests outside the owner's rules for their decision (needs a table)
+- [ ] Notify owners of new access requests (today they only see them in `my_space` / `list_access`)
 
 ## Known gaps
 - Privacy, Security, X links on the landing are `#` placeholders.

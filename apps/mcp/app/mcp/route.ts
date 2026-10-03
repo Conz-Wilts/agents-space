@@ -61,8 +61,19 @@ async function spaceStatus(user: User, space: Agent) {
     `Next steps (agent_id "${space.id}"):`,
     "1. Share what it can use: add_context_note (availability, prices, policies, FAQs), or create_connector + attach_connector for a calendar or other system.",
     "2. Set your rules in plain words with update_agent instructions: what it answers alone, what it asks you first, what it never touches.",
-    "3. Give the address to the people and agents you want to reach you, and approve them with review_access_request. To be listed in the directory, update_agent visibility public.",
+    `3. Decide who can reach you: allow_access("@their-handle") (list_access, revoke_access). Their agents then call ask_space("${space.id}"). To be listed in the directory, update_agent visibility public.`,
   ].join("\n");
+}
+
+/** `@Emma ` → `emma`. */
+const plainHandle = (h: string) => h.trim().replace(/^@/, "").toLowerCase();
+
+/** The signed-in user and their space, or a clear error. */
+async function ownSpace(ctx: Parameters<typeof requireUser>[0]) {
+  const user = await requireUser(ctx);
+  const space = await getSpace(user);
+  if (!space) throw new Error("You don't have a space yet. Claim one with claim_space.");
+  return { user, space };
 }
 
 /** `?claim=<handle>` on the MCP URL (from the landing page): claim it on the first signed-in request. */
@@ -171,6 +182,86 @@ const handler = createMcpHandler(
         const user = await requireUser(ctx);
         const { user: owner, space, created } = await claimSpace(user, handle.toLowerCase(), (id) => spaceEndpoint(base, id));
         return text(`${created ? "Claimed" : "Already yours"}: @${owner.handle}.\n\n${await spaceStatus(owner, space)}`);
+      }),
+    );
+
+    server.registerTool(
+      "ask_space",
+      {
+        title: "Ask someone's space",
+        description:
+          "Reach a person or business by handle (e.g. '@emma', 'marcos-trattoria') through their space, as the signed-in user. Returns their rules, what they share and the actions you may run, then answer from that or call run_agent_action with agent_id = the handle. If they haven't allowed you, it says how to ask.",
+        inputSchema: z.object({ handle: z.string().describe("Their handle, with or without @") }),
+      },
+      safe(async ({ handle }, ctx) => {
+        const h = plainHandle(handle);
+        const user = await currentUser(ctx);
+        const a = await store.getAgent(h);
+        if (!a || a.kind !== "hosted") throw new Error(`No space "@${h}". Check the handle, or search_agents to find someone.`);
+        if (!(await store.hasAccess(a.id, user?.id))) {
+          if (!user) throw new Error(`@${h}'s space is private. Sign in, then request_access("${h}").`);
+          const pending = (await store.listAccessRequests({ requesterId: user.id })).some((r) => r.agentId === a.id && r.status === "pending");
+          throw new Error(
+            pending
+              ? `You asked @${h} for access; they haven't answered yet.`
+              : `@${h} hasn't allowed you yet. Call request_access with agent_id "${h}" and say who you are, or ask them to allow @${user.handle}.`,
+          );
+        }
+        const actions = await scopedActions(a);
+        return text(
+          `You're talking to @${h}'s space as @${user?.handle ?? "anonymous"}. Follow its rules; if a request needs @${h}'s decision, say so instead of acting.\n\n${await loadSkill(a)}\n\n## Actions (run_agent_action with agent_id "${h}")\n${actions.map((x) => `- ${actionSignature(x)}: ${x.description}`).join("\n") || "none: answer from the context above"}`,
+        );
+      }),
+    );
+
+    server.registerTool(
+      "allow_access",
+      {
+        title: "Allow someone into your space",
+        description: "Whitelist a person by handle so their agents can use your space (ask_space). No request needed.",
+        inputSchema: z.object({ handle: z.string().describe("Their handle, with or without @") }),
+      },
+      safe(async ({ handle }, ctx) => {
+        const { space } = await ownSpace(ctx);
+        const who = await store.userByHandle(plainHandle(handle));
+        if (!who) throw new Error(`No one is @${plainHandle(handle)} on Agents Space yet.`);
+        const r = await store.requestAccess(space.id, who.id, "Allowed by the owner");
+        if (r.status !== "approved") await store.decideAccessRequest(r.id, "approved");
+        return text(`@${who.handle} can now use your space: their agent calls ask_space("${space.id}").`);
+      }),
+    );
+
+    server.registerTool(
+      "revoke_access",
+      {
+        title: "Remove someone from your space",
+        description: "Take a person's access to your space away. They can ask again with request_access.",
+        inputSchema: z.object({ handle: z.string().describe("Their handle, with or without @") }),
+      },
+      safe(async ({ handle }, ctx) => {
+        const { user, space } = await ownSpace(ctx);
+        const who = await store.userByHandle(plainHandle(handle));
+        const grants = who ? (await store.listAccessRequests({ ownerId: user.id })).filter((r) => r.agentId === space.id && r.requesterId === who.id && r.status !== "denied") : [];
+        if (!grants.length) throw new Error(`@${plainHandle(handle)} has no access to your space.`);
+        for (const r of grants) await store.decideAccessRequest(r.id, "denied");
+        return text(`@${who!.handle} no longer has access to your space.`);
+      }),
+    );
+
+    server.registerTool(
+      "list_access",
+      {
+        title: "Who can use your space",
+        description: "People allowed into your space, and requests waiting for you (approve with review_access_request or allow_access).",
+        inputSchema: z.object({}),
+      },
+      safe(async (_i, ctx) => {
+        const { user, space } = await ownSpace(ctx);
+        const rs = (await store.listAccessRequests({ ownerId: user.id })).filter((r) => r.agentId === space.id && r.status !== "denied");
+        const line = async (r: (typeof rs)[number]) => `• @${(await store.getUser(r.requesterId))?.handle ?? "?"}${r.message ? `: "${r.message}"` : ""} (${r.id})`;
+        const allowed = await Promise.all(rs.filter((r) => r.status === "approved").map(line));
+        const waiting = await Promise.all(rs.filter((r) => r.status === "pending").map(line));
+        return text(`Allowed (${allowed.length}):\n${allowed.join("\n") || "nobody yet"}\n\nWaiting for you (${waiting.length}):\n${waiting.join("\n") || "none"}`);
       }),
     );
 
@@ -652,7 +743,7 @@ const handler = createMcpHandler(
   {
     serverInfo: { name: "agents-space", version: "0.2.0" },
     instructions:
-      "Agents Space gives people and businesses a space: their own MCP address that other people's agents call instead of waiting on them. If the user just connected, call my_space first (claim_space if they have none) and help them set it up. Agents Space is also a directory of agents as shareable skills. Find agents (describe_bottleneck, search_agents), use them (use_agent, run_agent_action), request access to private ones (request_access), or build your own in natural language (prompt build_agent, or create_agent → add_context_note → create_connector → attach_connector → test_agent → publish_agent).",
+      "Agents Space gives people and businesses a space: their own MCP address that other people's agents call instead of waiting on them. To reach someone (\"ask emma if Saturday works\", \"check @marcos-trattoria for a table\"), call ask_space with their handle. If the user just connected, call my_space first (claim_space if they have none) and help them set it up; allow_access / revoke_access / list_access manage who can use it. Agents Space is also a directory of agents as shareable skills. Find agents (describe_bottleneck, search_agents), use them (use_agent, run_agent_action), request access to private ones (request_access), or build your own in natural language (prompt build_agent, or create_agent → add_context_note → create_connector → attach_connector → test_agent → publish_agent).",
   },
 );
 
