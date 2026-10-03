@@ -1,14 +1,19 @@
 import type {
   AccessRequest,
   Agent,
+  AgentSchedule,
   Bottleneck,
   Connector,
   ContextNote,
+  DataTable,
   DeviceLogin,
+  Model,
   NewAgentInput,
   NewBottleneckInput,
+  TableRow,
   User,
 } from "../schema";
+export type RowQuery = { where?: Record<string, unknown>; createdBy?: string; limit?: number; offset?: number; order?: "asc" | "desc" };
 /** A verified Supabase Auth identity. */
 export type AuthIdentity = { authId: string; email?: string; name?: string };
 
@@ -18,7 +23,7 @@ import { createPrismaStore } from "./prisma";
 /**
  * All data access goes through this. Two implementations:
  * - Prisma on Supabase Postgres, when DATABASE_URL is set (production).
- * - In-memory seeded store otherwise (local hacking; resets on restart, not shared between apps).
+ * - In-memory store otherwise (local hacking; resets on restart, not shared between apps).
  */
 export interface Store {
   /** Published public + listed agents, the viewer's own agents (any mode, drafts), and restricted ones the viewer is approved for. */
@@ -32,6 +37,31 @@ export interface Store {
   /** Create or replace the note with this slug. */
   upsertNote(note: Omit<ContextNote, "updatedAt">): Promise<ContextNote>;
   deleteNote(agentId: string, slug: string): Promise<boolean>;
+
+  /** Stored table definitions (the built-in `outputs` is added by `agentTables`, not here). */
+  listTables(agentId: string): Promise<DataTable[]>;
+  /** Create or replace a table definition. Existing rows are kept. */
+  saveTable(t: Omit<DataTable, "updatedAt" | "builtIn">): Promise<DataTable>;
+  /** Deletes the definition and every row. */
+  deleteTable(agentId: string, name: string): Promise<boolean>;
+  insertRows(agentId: string, table: string, rows: { data: Record<string, unknown>; createdBy?: string }[]): Promise<TableRow[]>;
+  /** Equality filters on data fields; newest first unless `order: "asc"`. */
+  queryRows(agentId: string, table: string, q?: RowQuery): Promise<TableRow[]>;
+  countRows(agentId: string, table: string): Promise<number>;
+  getRow(agentId: string, table: string, id: string): Promise<TableRow | undefined>;
+  /** Replaces the row's data. */
+  updateRow(agentId: string, table: string, id: string, data: Record<string, unknown>): Promise<TableRow>;
+  deleteRow(agentId: string, table: string, id: string): Promise<boolean>;
+
+  listSchedules(agentId: string): Promise<AgentSchedule[]>;
+  getSchedule(id: string): Promise<AgentSchedule | undefined>;
+  addSchedule(s: Omit<AgentSchedule, "id" | "createdAt">): Promise<AgentSchedule>;
+  updateSchedule(id: string, patch: Partial<Omit<AgentSchedule, "id" | "agentId" | "createdAt">>): Promise<AgentSchedule>;
+  deleteSchedule(id: string): Promise<boolean>;
+  /** Enabled schedules whose `nextRunAt` has passed, oldest first. */
+  dueSchedules(now: string, limit: number): Promise<AgentSchedule[]>;
+  /** Moves `nextRunAt` on only if it is still `from`: true for exactly one concurrent caller. */
+  claimSchedule(id: string, from: string, next: string): Promise<boolean>;
 
   /** Returns the API key once; only its hash is kept. */
   createUser(handle: string): Promise<{ user: User; apiKey: string }>;
@@ -53,6 +83,17 @@ export interface Store {
   setSecret(connector: string, name: string, ciphertext: string): Promise<void>;
   /** Encrypted values by secret name. Only the connector runtime should read these. */
   getSecrets(connector: string): Promise<Record<string, string>>;
+
+  /** Create or replace. Throws if the name belongs to another owner. Keeps a stored key. */
+  saveModel(m: Omit<Model, "createdAt" | "hasKey">): Promise<Model>;
+  getModel(name: string): Promise<Model | undefined>;
+  listModels(ownerId: string): Promise<Model[]>;
+  /** Also unsets it on agents that used it. */
+  deleteModel(name: string): Promise<boolean>;
+  /** Stores an already-encrypted API key. */
+  setModelKey(name: string, ciphertext: string): Promise<void>;
+  /** The encrypted key. Only the model runtime should read it. */
+  getModelKey(name: string): Promise<string | undefined>;
 
   requestAccess(agentId: string, requesterId: string, message?: string): Promise<AccessRequest>;
   listAccessRequests(opts: { ownerId?: string; requesterId?: string }): Promise<AccessRequest[]>;

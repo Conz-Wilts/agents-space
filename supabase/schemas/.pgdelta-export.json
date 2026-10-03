@@ -22,6 +22,10 @@
     "public/tables/ConnectorSecret.sql",
     "public/tables/ContextNote.sql",
     "public/tables/User.sql",
+    "public/tables/AgentTable.sql",
+    "public/tables/TableRow.sql",
+    "public/tables/AgentSchedule.sql",
+    "public/tables/AiModel.sql",
     "public/default_privileges.sql"
   ],
   "profile": "supabase",

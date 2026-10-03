@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getSessionUser } from "@/lib/supabase/server";
 import { AgentCalls } from "./agent-calls";
 import { AgentLogo, AGENTS, type AgentId } from "./agents";
+import { Monogram } from "./directory";
 import { CheckIcon } from "./icons";
 import { HandleField, Label, Logo, Mark, d } from "./primitives";
 
@@ -38,15 +39,34 @@ export async function Nav() {
               My agents
             </Link>
           )}
-          <Link href={user ? "/account" : "/login"} className="hidden max-w-[180px] truncate text-[15px] text-ink sm:inline">
-            {user ? `@${user.handle}` : "Sign in"}
-          </Link>
-          <Link
-            href="/#claim"
-            className="rounded-lg bg-ink px-[18px] py-2.5 text-[15px] font-medium whitespace-nowrap text-white transition-transform duration-200 hover:-translate-y-px active:scale-[0.98]"
-          >
-            Claim your space
-          </Link>
+          {user ? (
+            <Link
+              href="/account"
+              aria-label={`Account (@${user.handle})`}
+              title={`@${user.handle}`}
+              className="flex rounded-full ring-1 ring-edge transition-transform duration-200 hover:-translate-y-px"
+            >
+              {user.avatarUrl ? (
+                // Google profile picture; no-referrer avoids googleusercontent 403s.
+                <img
+                  src={user.avatarUrl}
+                  alt=""
+                  referrerPolicy="no-referrer"
+                  className="size-9 rounded-full object-cover"
+                  draggable={false}
+                />
+              ) : (
+                <Monogram name={user.handle} size={36} />
+              )}
+            </Link>
+          ) : (
+            <Link
+              href="/login"
+              className="rounded-lg bg-ink px-[18px] py-2.5 text-[15px] font-medium whitespace-nowrap text-white transition-transform duration-200 hover:-translate-y-px active:scale-[0.98]"
+            >
+              Sign in
+            </Link>
+          )}
         </div>
       </div>
     </header>

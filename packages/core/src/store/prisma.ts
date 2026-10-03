@@ -1,7 +1,7 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Prisma, PrismaClient } from "../generated/prisma/client";
 import { matchAgents } from "../match";
-import { AgentSchema, ConnectorActionSchema, type AccessRequest, type Agent, type Bottleneck, type Connector, type ContextNote, type DeviceLogin, type User } from "../schema";
+import { ModelSchema, AgentSchema, AgentScheduleSchema, CallerAccessSchema, ConnectorActionSchema, TableColumnSchema, type AccessRequest, type Agent, type AgentSchedule, type Bottleneck, type Connector, type ContextNote, type DataTable, type DeviceLogin, type Model, type TableRow, type User } from "../schema";
 import type { Store } from "./index";
 import { DEVICE_LOGIN_TTL_MS, RESERVED_HANDLES, handleCandidates, hashKey, newApiKey, newDeviceCode, newUserCode, normalizeHandle, normalizeUserCode, slug } from "./util";
 
@@ -11,9 +11,10 @@ type AgentRow = Prisma.AgentGetPayload<{ include: typeof agentInclude }>;
 const iso = (d: Date) => d.toISOString();
 
 function toAgent(r: AgentRow): Agent {
-  const { connectors, ownerUser: _u, createdAt, endpoint, ownerId, ...rest } = r as AgentRow & { ownerUser?: unknown };
+  const { connectors, ownerUser: _u, createdAt, endpoint, ownerId, model, ...rest } = r as AgentRow & { ownerUser?: unknown };
   return AgentSchema.parse({
     ...rest,
+    model: model ?? undefined,
     endpoint: endpoint ?? undefined,
     ownerId: ownerId ?? undefined,
     createdAt: iso(createdAt),
@@ -32,6 +33,43 @@ const toUser = (r: Prisma.UserGetPayload<object>): User => ({
 
 const toNote = (r: { agentId: string; slug: string; title: string; body: string; updatedAt: Date }): ContextNote => ({ ...r, updatedAt: iso(r.updatedAt) });
 
+const toTable = (r: Prisma.AgentTableGetPayload<object>): DataTable => ({
+  agentId: r.agentId,
+  name: r.name,
+  title: r.title,
+  context: r.context,
+  columns: TableColumnSchema.array().parse(r.columns),
+  callerAccess: CallerAccessSchema.parse(r.callerAccess),
+  builtIn: false,
+  updatedAt: iso(r.updatedAt),
+});
+
+const toSchedule = (r: Prisma.AgentScheduleGetPayload<object>): AgentSchedule =>
+  AgentScheduleSchema.parse({
+    ...r,
+    nextRunAt: iso(r.nextRunAt),
+    lastRunAt: r.lastRunAt ? iso(r.lastRunAt) : undefined,
+    lastStatus: r.lastStatus ?? undefined,
+    lastResult: r.lastResult ?? undefined,
+    createdAt: iso(r.createdAt),
+  });
+
+/** Schedule fields as Prisma data: ISO strings become Dates. */
+function scheduleData(p: Partial<AgentSchedule>) {
+  const { id: _i, agentId: _a, createdAt: _c, nextRunAt, lastRunAt, ...rest } = p;
+  return { ...rest, ...(nextRunAt ? { nextRunAt: new Date(nextRunAt) } : {}), ...(lastRunAt ? { lastRunAt: new Date(lastRunAt) } : {}) };
+}
+
+const toRow = (r: Prisma.TableRowGetPayload<object>): TableRow => ({
+  id: r.id,
+  agentId: r.agentId,
+  table: r.tableName,
+  data: (r.data ?? {}) as Record<string, unknown>,
+  createdBy: r.createdBy ?? undefined,
+  createdAt: iso(r.createdAt),
+  updatedAt: iso(r.updatedAt),
+});
+
 function toConnector(r: Prisma.ConnectorGetPayload<object>): Connector {
   return {
     name: r.name,
@@ -44,6 +82,18 @@ function toConnector(r: Prisma.ConnectorGetPayload<object>): Connector {
     createdAt: iso(r.createdAt),
   };
 }
+
+const toModel = (r: Prisma.AiModelGetPayload<object>): Model =>
+  ModelSchema.parse({
+    name: r.name,
+    ownerId: r.ownerId,
+    title: r.title,
+    provider: r.provider,
+    model: r.modelId,
+    baseUrl: r.baseUrl ?? undefined,
+    hasKey: !!r.keyCiphertext,
+    createdAt: iso(r.createdAt),
+  });
 
 function toRequest(r: Prisma.AccessRequestGetPayload<object>): AccessRequest {
   return { ...r, createdAt: iso(r.createdAt), decidedAt: r.decidedAt ? iso(r.decidedAt) : undefined };
@@ -65,8 +115,8 @@ const toBottleneck = (r: Prisma.BottleneckGetPayload<object>): Bottleneck => ({
 });
 
 /** Columns of an Agent (minus relations/id) from a domain object or patch. */
-function agentData<T extends Partial<Agent>>(a: T): Omit<T, "connectors" | "id" | "createdAt" | "ownerId"> {
-  const { connectors: _c, id: _i, createdAt: _t, ownerId: _o, ...cols } = a;
+function agentData<T extends Partial<Agent>>(a: T): Omit<T, "connectors" | "id" | "createdAt" | "ownerId" | "model"> {
+  const { connectors: _c, id: _i, createdAt: _t, ownerId: _o, model: _m, ...cols } = a;
   return cols;
 }
 
@@ -93,11 +143,11 @@ export function createPrismaStore(connectionString: string): Store {
       const rows = await db.agent.findMany({
         where: {
           OR: [
-            { status: "published" as const, visibility: { in: ["public" as const, "listed" as const] } },
+            { status: "published" as const, mode: "skill", visibility: { in: ["public" as const, "listed" as const] } },
             ...(viewerId
               ? [
                   { ownerId: viewerId },
-                  { status: "published" as const, visibility: "restricted" as const, accessRequests: { some: { requesterId: viewerId, status: "approved" as const } } },
+                  { status: "published" as const, mode: "skill", visibility: "restricted" as const, accessRequests: { some: { requesterId: viewerId, status: "approved" as const } } },
                 ]
               : []),
           ],
@@ -128,6 +178,7 @@ export function createPrismaStore(connectionString: string): Store {
             ...agentData(parsed),
             id,
             ...(parsed.ownerId ? { ownerUser: { connect: { id: parsed.ownerId } } } : {}),
+            ...(parsed.model ? { modelRef: { connect: { name: parsed.model } } } : {}),
             connectors: { create: parsed.connectors.map((c) => ({ connectorName: c.connector, actions: c.actions })) },
           },
           include: agentInclude,
@@ -147,7 +198,7 @@ export function createPrismaStore(connectionString: string): Store {
           await tx.agentConnector.deleteMany({ where: { agentId: id } });
           await tx.agentConnector.createMany({ data: next.connectors.map((c) => ({ agentId: id, connectorName: c.connector, actions: c.actions })) });
         }
-        return tx.agent.update({ where: { id }, data: agentData(next), include: agentInclude });
+        return tx.agent.update({ where: { id }, data: { ...agentData(next), model: next.model ?? null }, include: agentInclude });
       });
       return toAgent(r);
     },
@@ -166,6 +217,88 @@ export function createPrismaStore(connectionString: string): Store {
     async deleteNote(agentId, s) {
       const { count } = await db.contextNote.deleteMany({ where: { agentId, slug: s } });
       return count > 0;
+    },
+
+    async listTables(agentId) {
+      return (await db.agentTable.findMany({ where: { agentId }, orderBy: { createdAt: "asc" } })).map(toTable);
+    },
+    async saveTable({ agentId, name, title, context, columns, callerAccess }) {
+      const data = { title, context, columns: columns as Prisma.InputJsonValue, callerAccess };
+      return toTable(await db.agentTable.upsert({ where: { agentId_name: { agentId, name } }, create: { ...data, agentId, name }, update: data }));
+    },
+    async deleteTable(agentId, name) {
+      const [rowsGone, tablesGone] = await db.$transaction([
+        db.tableRow.deleteMany({ where: { agentId, tableName: name } }),
+        db.agentTable.deleteMany({ where: { agentId, name } }),
+      ]);
+      return rowsGone.count + tablesGone.count > 0;
+    },
+    async insertRows(agentId, table, input) {
+      const created = await db.$transaction(
+        input.map(({ data, createdBy }) => db.tableRow.create({ data: { agentId, tableName: table, data: data as Prisma.InputJsonValue, createdBy } })),
+      );
+      return created.map(toRow);
+    },
+    async queryRows(agentId, table, { where = {}, createdBy, limit = 50, offset = 0, order = "desc" } = {}) {
+      const rows = await db.tableRow.findMany({
+        where: {
+          agentId,
+          tableName: table,
+          ...(createdBy ? { createdBy } : {}),
+          AND: Object.entries(where).map(([k, v]) => ({ data: { path: [k], equals: v as Prisma.InputJsonValue } })),
+        },
+        orderBy: [{ createdAt: order }, { id: order }],
+        take: limit,
+        skip: offset,
+      });
+      return rows.map(toRow);
+    },
+    async countRows(agentId, table) {
+      return db.tableRow.count({ where: { agentId, tableName: table } });
+    },
+    async getRow(agentId, table, id) {
+      const r = await db.tableRow.findFirst({ where: { id, agentId, tableName: table } });
+      return r ? toRow(r) : undefined;
+    },
+    async updateRow(agentId, table, id, data) {
+      const { count } = await db.tableRow.updateMany({ where: { id, agentId, tableName: table }, data: { data: data as Prisma.InputJsonValue } });
+      if (!count) throw new Error(`No row "${id}" in ${table}.`);
+      return toRow((await db.tableRow.findUnique({ where: { id } }))!);
+    },
+    async deleteRow(agentId, table, id) {
+      const { count } = await db.tableRow.deleteMany({ where: { id, agentId, tableName: table } });
+      return count > 0;
+    },
+
+    async listSchedules(agentId) {
+      return (await db.agentSchedule.findMany({ where: { agentId }, orderBy: { createdAt: "asc" } })).map(toSchedule);
+    },
+    async getSchedule(id) {
+      const r = await db.agentSchedule.findUnique({ where: { id } });
+      return r ? toSchedule(r) : undefined;
+    },
+    async addSchedule(input) {
+      const { agentId, task, cron, timezone, enabled, nextRunAt } = input;
+      return toSchedule(await db.agentSchedule.create({ data: { agentId, task, cron, timezone, enabled, nextRunAt: new Date(nextRunAt) } }));
+    },
+    async updateSchedule(id, patch) {
+      try {
+        return toSchedule(await db.agentSchedule.update({ where: { id }, data: scheduleData(patch) }));
+      } catch (e) {
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2025") throw new Error(`No schedule "${id}".`);
+        throw e;
+      }
+    },
+    async deleteSchedule(id) {
+      return (await db.agentSchedule.deleteMany({ where: { id } })).count > 0;
+    },
+    async dueSchedules(at, limit) {
+      const rows = await db.agentSchedule.findMany({ where: { enabled: true, nextRunAt: { lte: new Date(at) } }, orderBy: { nextRunAt: "asc" }, take: limit });
+      return rows.map(toSchedule);
+    },
+    async claimSchedule(id, from, next) {
+      const { count } = await db.agentSchedule.updateMany({ where: { id, nextRunAt: new Date(from) }, data: { nextRunAt: new Date(next) } });
+      return count === 1;
     },
 
     async createUser(handle) {
@@ -249,6 +382,29 @@ export function createPrismaStore(connectionString: string): Store {
       return Object.fromEntries(rows.map((r) => [r.name, r.ciphertext]));
     },
 
+    async saveModel(m) {
+      const existing = await db.aiModel.findUnique({ where: { name: m.name }, select: { ownerId: true } });
+      if (existing && existing.ownerId !== m.ownerId) throw new Error(`Model "${m.name}" belongs to someone else.`);
+      const data = { title: m.title, provider: m.provider, modelId: m.model, baseUrl: m.baseUrl ?? null };
+      return toModel(await db.aiModel.upsert({ where: { name: m.name }, create: { ...data, name: m.name, ownerId: m.ownerId }, update: data }));
+    },
+    async getModel(name) {
+      const r = await db.aiModel.findUnique({ where: { name } });
+      return r ? toModel(r) : undefined;
+    },
+    async listModels(ownerId) {
+      return (await db.aiModel.findMany({ where: { ownerId }, orderBy: { createdAt: "asc" } })).map(toModel);
+    },
+    async deleteModel(name) {
+      return (await db.aiModel.deleteMany({ where: { name } })).count > 0;
+    },
+    async setModelKey(name, ciphertext) {
+      await db.aiModel.update({ where: { name }, data: { keyCiphertext: ciphertext } });
+    },
+    async getModelKey(name) {
+      return (await db.aiModel.findUnique({ where: { name }, select: { keyCiphertext: true } }))?.keyCiphertext ?? undefined;
+    },
+
     async requestAccess(agentId, requesterId, message = "") {
       const existing = await db.accessRequest.findFirst({ where: { agentId, requesterId, status: { not: "denied" } } });
       if (existing) return toRequest(existing);
@@ -270,18 +426,19 @@ export function createPrismaStore(connectionString: string): Store {
       }
     },
     async hasAccess(agentId, userId) {
-      const a = await db.agent.findUnique({ where: { id: agentId }, select: { ownerId: true, status: true, visibility: true } });
+      const a = await db.agent.findUnique({ where: { id: agentId }, select: { ownerId: true, status: true, visibility: true, mode: true } });
       if (!a) return false;
       if (userId && a.ownerId === userId) return true;
-      if (a.status !== "published") return false;
+      if (a.status !== "published" || a.mode === "scheduled") return false;
       if (a.visibility === "public") return true;
       if (a.visibility === "private") return false;
       return approved(agentId, userId);
     },
     async canSeeInfo(agentId, userId) {
-      const a = await db.agent.findUnique({ where: { id: agentId }, select: { ownerId: true, status: true, visibility: true } });
+      const a = await db.agent.findUnique({ where: { id: agentId }, select: { ownerId: true, status: true, visibility: true, mode: true } });
       if (!a) return false;
       if (userId && a.ownerId === userId) return true;
+      if (a.mode === "scheduled") return false;
       if (a.status !== "published") return false;
       if (a.visibility === "public" || a.visibility === "listed") return true;
       return a.visibility === "restricted" && approved(agentId, userId);

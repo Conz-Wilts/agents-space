@@ -1,6 +1,5 @@
-import { seedAgents } from "../seed";
 import { matchAgents } from "../match";
-import { AgentSchema, type AccessRequest, type Bottleneck, type Connector, type ContextNote, type DeviceLogin, type User } from "../schema";
+import { AgentSchema, type Agent, type AccessRequest, type AgentSchedule, type Bottleneck, type Connector, type ContextNote, type DataTable, type DeviceLogin, type Model, type TableRow, type User } from "../schema";
 import type { Store } from "./index";
 import { DEVICE_LOGIN_TTL_MS, RESERVED_HANDLES, handleCandidates, hashKey, newApiKey, newDeviceCode, newUserCode, normalizeHandle, normalizeUserCode, slug } from "./util";
 
@@ -9,10 +8,16 @@ const now = () => new Date().toISOString();
 /** In-memory store for local development without a database. Resets on restart. */
 export function createMemoryStore(): Store {
   console.warn("[agents-space] DATABASE_URL not set — using the in-memory store (data resets on restart).");
-  const agents = [...seedAgents];
+  const agents: Agent[] = [];
   const notes: ContextNote[] = [];
+  const tables: DataTable[] = [];
+  const rows: TableRow[] = [];
+  const schedules: AgentSchedule[] = [];
+  const rowsOf = (agentId: string, table: string) => rows.filter((r) => r.agentId === agentId && r.table === table);
   const users: User[] = [];
   const connectors: Connector[] = [];
+  const models: (Omit<Model, "hasKey"> & { key?: string })[] = [];
+  const pubModel = ({ key, ...m }: (typeof models)[number]): Model => ({ ...m, hasKey: !!key });
   const secrets = new Map<string, Record<string, string>>();
   const requests: AccessRequest[] = [];
   const bottlenecks: Bottleneck[] = [];
@@ -38,7 +43,7 @@ export function createMemoryStore(): Store {
       let all = agents.filter(
         (a) =>
           (viewerId && a.ownerId === viewerId) ||
-          (a.status === "published" && (a.visibility === "public" || a.visibility === "listed" || (a.visibility === "restricted" && approved(a.id, viewerId)))),
+          (a.status === "published" && a.mode !== "scheduled" && (a.visibility === "public" || a.visibility === "listed" || (a.visibility === "restricted" && approved(a.id, viewerId)))),
       );
       if (category) all = all.filter((a) => a.category.toLowerCase() === category.toLowerCase());
       if (query) return matchAgents(all, query, [], all.length).map((r) => r.agent);
@@ -77,6 +82,90 @@ export function createMemoryStore(): Store {
       const i = notes.findIndex((x) => x.agentId === agentId && x.slug === s);
       if (i >= 0) notes.splice(i, 1);
       return i >= 0;
+    },
+
+    async listTables(agentId) {
+      return tables.filter((t) => t.agentId === agentId);
+    },
+    async saveTable(t) {
+      const table: DataTable = { ...t, builtIn: false, updatedAt: now() };
+      const i = tables.findIndex((x) => x.agentId === t.agentId && x.name === t.name);
+      if (i >= 0) tables[i] = table;
+      else tables.push(table);
+      return table;
+    },
+    async deleteTable(agentId, name) {
+      const i = tables.findIndex((x) => x.agentId === agentId && x.name === name);
+      if (i >= 0) tables.splice(i, 1);
+      const before = rows.length;
+      for (let j = rows.length - 1; j >= 0; j--) if (rows[j].agentId === agentId && rows[j].table === name) rows.splice(j, 1);
+      return i >= 0 || rows.length < before;
+    },
+    async insertRows(agentId, table, input) {
+      const added = input.map(({ data, createdBy }) => ({ id: crypto.randomUUID(), agentId, table, data, createdBy, createdAt: now(), updatedAt: now() }));
+      rows.push(...added);
+      return added;
+    },
+    async queryRows(agentId, table, { where = {}, createdBy, limit = 50, offset = 0, order = "desc" } = {}) {
+      const hits = rowsOf(agentId, table).filter(
+        (r) => (!createdBy || r.createdBy === createdBy) && Object.entries(where).every(([k, v]) => JSON.stringify(r.data[k]) === JSON.stringify(v)),
+      );
+      if (order === "desc") hits.reverse();
+      return hits.slice(offset, offset + limit);
+    },
+    async countRows(agentId, table) {
+      return rowsOf(agentId, table).length;
+    },
+    async getRow(agentId, table, id) {
+      return rowsOf(agentId, table).find((r) => r.id === id);
+    },
+    async updateRow(agentId, table, id, data) {
+      const r = rowsOf(agentId, table).find((x) => x.id === id);
+      if (!r) throw new Error(`No row "${id}" in ${table}.`);
+      r.data = data;
+      r.updatedAt = now();
+      return r;
+    },
+    async deleteRow(agentId, table, id) {
+      const i = rows.findIndex((r) => r.agentId === agentId && r.table === table && r.id === id);
+      if (i >= 0) rows.splice(i, 1);
+      return i >= 0;
+    },
+
+    async listSchedules(agentId) {
+      return schedules.filter((x) => x.agentId === agentId).map((x) => ({ ...x }));
+    },
+    async getSchedule(id) {
+      const sc = schedules.find((x) => x.id === id);
+      return sc && { ...sc };
+    },
+    async addSchedule(input) {
+      const sc = { ...input, id: crypto.randomUUID(), createdAt: now() };
+      schedules.push(sc);
+      return { ...sc };
+    },
+    async updateSchedule(id, patch) {
+      const sc = schedules.find((x) => x.id === id);
+      if (!sc) throw new Error(`No schedule "${id}".`);
+      return { ...Object.assign(sc, patch) };
+    },
+    async deleteSchedule(id) {
+      const i = schedules.findIndex((x) => x.id === id);
+      if (i >= 0) schedules.splice(i, 1);
+      return i >= 0;
+    },
+    async dueSchedules(at, limit) {
+      return schedules
+        .filter((x) => x.enabled && x.nextRunAt <= at)
+        .sort((a, b) => a.nextRunAt.localeCompare(b.nextRunAt))
+        .slice(0, limit)
+        .map((x) => ({ ...x }));
+    },
+    async claimSchedule(id, from, next) {
+      const sc = schedules.find((x) => x.id === id);
+      if (!sc || sc.nextRunAt !== from) return false;
+      sc.nextRunAt = next;
+      return true;
     },
 
     async createUser(handle) {
@@ -137,6 +226,37 @@ export function createMemoryStore(): Store {
       return { ...secrets.get(connector) };
     },
 
+    async saveModel(m) {
+      const i = models.findIndex((x) => x.name === m.name);
+      if (i >= 0 && models[i].ownerId !== m.ownerId) throw new Error(`Model "${m.name}" belongs to someone else.`);
+      const row = { ...m, key: i >= 0 ? models[i].key : undefined, createdAt: i >= 0 ? models[i].createdAt : now() };
+      if (i >= 0) models[i] = row;
+      else models.push(row);
+      return pubModel(row);
+    },
+    async getModel(name) {
+      const m = models.find((x) => x.name === name);
+      return m && pubModel(m);
+    },
+    async listModels(ownerId) {
+      return models.filter((m) => m.ownerId === ownerId).map(pubModel);
+    },
+    async deleteModel(name) {
+      const i = models.findIndex((x) => x.name === name);
+      if (i < 0) return false;
+      models.splice(i, 1);
+      for (const a of agents) if (a.model === name) a.model = undefined;
+      return true;
+    },
+    async setModelKey(name, ciphertext) {
+      const m = models.find((x) => x.name === name);
+      if (!m) throw new Error(`No model "${name}".`);
+      m.key = ciphertext;
+    },
+    async getModelKey(name) {
+      return models.find((x) => x.name === name)?.key;
+    },
+
     async requestAccess(agentId, requesterId, message = "") {
       const existing = requests.find((r) => r.agentId === agentId && r.requesterId === requesterId && r.status !== "denied");
       if (existing) return existing;
@@ -161,7 +281,7 @@ export function createMemoryStore(): Store {
       const a = agents.find((x) => x.id === agentId);
       if (!a) return false;
       if (userId && a.ownerId === userId) return true;
-      if (a.status !== "published") return false;
+      if (a.status !== "published" || a.mode === "scheduled") return false;
       if (a.visibility === "public") return true;
       if (a.visibility === "private") return false;
       return approved(agentId, userId);
@@ -171,6 +291,7 @@ export function createMemoryStore(): Store {
       if (!a) return false;
       if (userId && a.ownerId === userId) return true;
       if (a.status !== "published") return false;
+      if (a.mode === "scheduled") return false;
       if (a.visibility === "public" || a.visibility === "listed") return true;
       return a.visibility === "restricted" && approved(agentId, userId);
     },

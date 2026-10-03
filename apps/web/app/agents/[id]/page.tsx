@@ -1,13 +1,15 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { missingSecrets, store } from "@agents-space/core";
+import { agentTables, describeSchedule, missingSecrets, modelProblem, store } from "@agents-space/core";
 import { getSessionUser } from "@/lib/supabase/server";
 import { AgentDocs } from "@/components/agent/agent-docs";
+import { skillTree } from "@/components/agent/skill-tree";
+import { AddModelPanel, ModelPanel } from "@/components/models/model-panel";
 import { OwnerControls } from "@/components/agent/owner-controls";
 import { RequestAccess } from "@/components/agent/request-access";
 import { ConnectorCard } from "@/components/connectors/connector-card";
 import { AppPage } from "@/components/landing/app-page";
-import { Monogram } from "@/components/landing/directory";
+import { Avatar } from "@/components/landing/directory";
 import { Eyebrow, Label, d } from "@/components/landing/primitives";
 import { VISIBILITY_LABELS } from "@/components/agent/visibility";
 
@@ -19,22 +21,30 @@ export default async function AgentPage({ params }: PageProps<"/agents/[id]">) {
   if (!agent || (!isOwner && (agent.status === "draft" || agent.visibility === "private"))) notFound();
   // A restricted agent shows only its name (and the request button) to people who are not approved.
   const info = await store.canSeeInfo(agent.id, user?.id);
+  const creator = isOwner && user.name ? { name: user.name, avatarUrl: user.avatarUrl } : { name: agent.owner };
 
   // Instructions, notes and tools are the agent's skill: only for people who may use it.
   const access = agent.kind === "hosted" && (await store.hasAccess(agent.id, user?.id));
-  const [notes, connectors] = access
+  const currentModel = access && agent.model ? await store.getModel(agent.model) : undefined;
+  const [notes, connectors, tables, schedules] = access
     ? await Promise.all([
         store.listNotes(agent.id),
         Promise.all(agent.connectors.map(async (s) => ({ scope: s, connector: await store.getConnector(s.connector) }))),
+        agentTables(agent).then((ts) => ts.filter((t) => isOwner || t.callerAccess !== "none")),
+        isOwner ? store.listSchedules(agent.id) : [],
       ])
-    : [[], []];
+    : [[], [], [], []];
   // Latest request by this viewer, for the request-access button on agents that need approval.
   const myRequest =
     !access && user && agent.kind === "hosted"
       ? (await store.listAccessRequests({ requesterId: user.id })).find((r) => r.agentId === agent.id)
       : undefined;
-  const needsSetup =
-    isOwner && (await Promise.all(connectors.map(async ({ connector: c }) => !c || (await missingSecrets(c)).length > 0))).some(Boolean);
+  // Connectors the owner still has to finish (missing, or secrets unset): red dots in the tree.
+  const needsSetupFor = new Set(
+    isOwner
+      ? (await Promise.all(connectors.map(async ({ scope, connector: c }) => (!c || (await missingSecrets(c)).length > 0 ? scope.connector : "")))).filter(Boolean)
+      : [],
+  );
   const status = agent.status === "draft" ? "Draft" : VISIBILITY_LABELS[agent.visibility].replace(" (info only)", "");
 
   return (
@@ -68,8 +78,8 @@ export default async function AgentPage({ params }: PageProps<"/agents/[id]">) {
                 </p>
                 <div className="r flex flex-wrap items-center gap-3" style={d(350)}>
                   <span className="flex items-center gap-2">
-                    <Monogram name={agent.owner} size={28} />
-                    <span className="text-[15px] text-ink">{agent.owner}</span>
+                    <Avatar creator={creator} size={28} />
+                    <span className="text-[15px] text-ink">{creator.name}</span>
                   </span>
                   <span className="rounded-full px-2.5 py-1 font-mono text-[11px] uppercase tracking-[1px] text-ink outline outline-1 -outline-offset-1 outline-edge">
                     {status}
@@ -90,34 +100,28 @@ export default async function AgentPage({ params }: PageProps<"/agents/[id]">) {
         {access ? (
           <div className="r rounded-[14px] bg-white p-5 outline outline-1 -outline-offset-1 outline-edge sm:p-8">
             <AgentDocs
-              docs={[
-                { id: "instructions", title: "Instructions", body: agent.instructions },
-                ...notes.map((n) => ({ id: `note:${n.slug}`, title: n.title, body: n.body })),
-              ]}
-              toolsAlert={needsSetup}
-              tools={
-                <div className="flex flex-col gap-8">
-                  <h2 className="text-[28px] leading-8 font-medium tracking-[-1px] text-ink">Tools</h2>
-                  {connectors.length === 0 ? (
-                    <p className="text-[15px] text-muted">None. This agent is instructions only.</p>
+              tree={skillTree({
+                instructions: agent.instructions,
+                notes,
+                tables,
+                schedules: schedules.map((x) => ({ id: x.id, label: x.task, body: describeSchedule(x) })),
+                tools: connectors.map(({ scope, connector }) => ({
+                  id: scope.connector,
+                  label: connector?.title ?? scope.connector,
+                  alert: isOwner && needsSetupFor.has(scope.connector),
+                  panel: connector ? (
+                    <ConnectorCard connector={connector} only={scope.actions} owner={isOwner && connector.ownerId === user?.id} />
                   ) : (
-                    connectors.map(({ scope, connector }) =>
-                      connector ? (
-                        <ConnectorCard
-                          key={scope.connector}
-                          connector={connector}
-                          only={scope.actions}
-                          owner={isOwner && connector.ownerId === user?.id}
-                        />
-                      ) : (
-                        <p key={scope.connector} className="text-[15px] text-red-700">
-                          <code className="font-mono">{scope.connector}</code> no longer exists.
-                        </p>
-                      ),
-                    )
-                  )}
-                </div>
-              }
+                    <p className="text-[15px] text-red-700">
+                      <code className="font-mono">{scope.connector}</code> no longer exists.
+                    </p>
+                  ),
+                })),
+                models: {
+                  current: { label: currentModel?.title ?? "Default model", alert: isOwner && !!currentModel && !!modelProblem(currentModel), panel: <ModelPanel agent={agent} owner={isOwner} /> },
+                  add: isOwner ? <AddModelPanel agentId={agent.id} /> : undefined,
+                },
+              })}
             />
           </div>
         ) : (

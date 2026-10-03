@@ -52,7 +52,7 @@ function renderUrl(template: string, ctx: Ctx): URL {
   return new URL(origin + renderString(rest, ctx, true));
 }
 
-function isPrivateHost(host: string): boolean {
+export function isPrivateHost(host: string): boolean {
   const h = host.toLowerCase().replace(/^\[|\]$/g, "");
   if (h === "localhost" || h.endsWith(".localhost") || h.endsWith(".local") || h.endsWith(".internal")) return true;
   if (h === "::1" || h === "::" || /^f[cd]/.test(h) || h.startsWith("fe80")) return true;

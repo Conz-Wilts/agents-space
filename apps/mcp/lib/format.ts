@@ -26,7 +26,7 @@ const VISIBILITY_FLAG: Record<Visibility, string> = {
 };
 
 export const fmt = (a: Agent, access?: boolean) => {
-  const flags = [a.kind, VISIBILITY_FLAG[a.visibility], a.status === "draft" ? "DRAFT" : null, access === false ? "request access" : null]
+  const flags = [a.kind, a.mode === "scheduled" ? "scheduled: runs for its owner" : VISIBILITY_FLAG[a.visibility], a.status === "draft" ? "DRAFT" : null, access === false ? "request access" : null]
     .filter(Boolean)
     .join(" · ");
   return `• ${a.name} (${a.id}) — ${a.tagline}\n  ${flags} | by ${a.owner} | tools: ${a.tools.join(", ") || "—"} | pricing: ${a.pricing}${a.endpoint ? `\n  endpoint: ${a.endpoint}` : ""}`;

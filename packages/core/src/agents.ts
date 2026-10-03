@@ -1,6 +1,8 @@
+import { z } from "zod";
 import { store, slug } from "./store";
 import { mcpServerActions, prepareConnector, runConnectorAction } from "./connectors";
 import { encryptSecret } from "./secrets";
+import { tablesSkill } from "./tables";
 import type { ActionParam, Agent, Connector, ConnectorActionInput, User } from "./schema";
 
 /**
@@ -16,12 +18,14 @@ export async function addContextNote(agent: Agent, title: string, body: string) 
 export async function loadSkill(agent: Agent): Promise<string> {
   const parts = [`# ${agent.name}\n\n${agent.tagline}\n\n## Instructions\n\n${agent.instructions || agent.description}`];
   for (const n of await store.listNotes(agent.id)) parts.push(`## Context: ${n.title}\n\n${n.body}`);
+  const tables = await tablesSkill(agent);
+  if (tables) parts.push(tables);
   return parts.join("\n\n");
 }
 
 /** What anyone may see about an agent: no instructions or connector scope. */
 export function publicAgent(a: Agent) {
-  const { instructions: _i, connectors: _c, ownerId: _o, ...listing } = a;
+  const { instructions: _i, connectors: _c, ownerId: _o, model: _m, ...listing } = a;
   return listing;
 }
 
@@ -38,6 +42,26 @@ export async function scopedActions(agent: Agent): Promise<ScopedAction[]> {
         out.push({ connector: c.name, action: a.name, description: a.description, params: a.params });
   }
   return out;
+}
+
+const zodFor: Record<ActionParam["type"], () => z.ZodType> = {
+  string: () => z.string(),
+  number: () => z.number(),
+  boolean: () => z.boolean(),
+  object: () => z.record(z.string(), z.unknown()),
+  array: () => z.array(z.unknown()),
+};
+
+/** A tool input schema from an action's declared params. */
+export function actionInputSchema(params: Record<string, ActionParam>) {
+  return z.object(
+    Object.fromEntries(
+      Object.entries(params).map(([k, p]) => {
+        const t = p.description ? zodFor[p.type]().describe(p.description) : zodFor[p.type]();
+        return [k, p.required ? t : t.optional()];
+      }),
+    ),
+  );
 }
 
 /** One-line signature for listing an action to an LLM, e.g. `bookings.create(date*, party_size*, notes)`. */

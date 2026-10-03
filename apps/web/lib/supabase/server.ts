@@ -21,13 +21,17 @@ export async function createClient() {
   });
 }
 
-/** The signed-in Agents Space user (verified JWT), creating the account row on first sign-in. */
-export async function getSessionUser(): Promise<User | undefined> {
+/** The signed-in Agents Space user (verified JWT), creating the account row on first sign-in.
+ *  `name` and `avatarUrl` are the Google name and profile picture from the sign-in metadata (not stored). */
+export async function getSessionUser(): Promise<(User & { name?: string; avatarUrl?: string }) | undefined> {
   if (!supabaseConfigured()) return undefined;
   const supabase = await createClient();
   const { data } = await supabase.auth.getClaims();
   const c = data?.claims;
   if (!c?.sub) return undefined;
-  const meta = (c.user_metadata ?? {}) as { full_name?: string; name?: string };
-  return store.userForAuth({ authId: c.sub, email: c.email, name: meta.full_name ?? meta.name });
+  const meta = (c.user_metadata ?? {}) as { full_name?: string; name?: string; avatar_url?: string; picture?: string };
+  // Some Google accounts report "Name (Name)"; keep one copy.
+  const name = (meta.full_name ?? meta.name)?.replace(/^(.+?)\s*\(\1\)$/, "$1");
+  const user = await store.userForAuth({ authId: c.sub, email: c.email, name });
+  return { ...user, name, avatarUrl: meta.avatar_url ?? meta.picture };
 }

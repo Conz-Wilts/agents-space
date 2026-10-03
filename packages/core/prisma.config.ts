@@ -8,7 +8,6 @@ export default defineConfig({
   schema: "prisma/schema.prisma",
   migrations: {
     path: "prisma/migrations",
-    seed: "tsx prisma/seed.ts",
   },
   datasource: {
     // Supabase: migrations need the direct (session) connection; the app uses the pooled DATABASE_URL.

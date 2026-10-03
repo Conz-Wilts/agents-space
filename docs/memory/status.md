@@ -33,9 +33,18 @@ _Last updated: 2026-10-03_
 - [x] One MCP to reach anyone: `ask_space("@emma")` loads Emma's space as the signed-in user (rules, context, allowed actions) or says how to get access; owners whitelist with `allow_access` / `revoke_access` / `list_access` (an allow = an approved AccessRequest, no schema change). Tested against the Supabase DB with a throwaway account (deleted)
 
 - [x] `/llms.txt` on the web (llmstxt.org): what Agent Space is, how to connect, reach someone by handle, run your own space; linked as "For agents" in the landing footer
+- [x] Agent tables (2026-10-03): every hosted agent keeps its own data on Agents Space, no connector needed. Built-in `outputs` table (kind, summary, data) on every agent; owners `create_table` for their purpose (e.g. `reservations`) with typed columns, a context that goes into the skill, and `caller_access` (none / insert / own / read / write). Row tools on `/mcp` (with `agent_id`) and on every per-agent server. Tested on the in-memory store and through the route handlers. **Migration `20261003214000_agent_tables.sql` is hand-written (Docker was off for the declarative sync) and not yet pushed to Supabase.**
+
+- [x] Scheduled agents (2026-10-03): `Agent.mode` = `skill` (default, for others) or `scheduled` (runs for its owner). `AgentSchedule` table (cron + IANA timezone + task, ≥15 min apart, ≤10 per agent). Vercel Cron → `/api/cron/schedules` every minute claims due schedules atomically and runs an AI SDK `ToolLoopAgent` (AI Gateway, `SCHEDULE_MODEL`) over the agent's skill, scoped actions and tables as the owner; report saved to `lastResult` + an `outputs` row (`kind: scheduled_run`). MCP tools: `schedule_agent`, `list_schedules`, `update_schedule`, `delete_schedule`, `run_schedule_now`, `schedule_runs`. Scheduled agents are owner-only: unlisted, no access for others, can't be published. Tested on the in-memory store with a mock model; **not yet run against a real model** (no `AI_GATEWAY_API_KEY` locally). Migration `20261003220000_agent_schedules.sql` not yet pushed
+
+- [x] Models (2026-10-03): owners add LLMs like Visvine's models/ (Vercel AI Gateway, OpenAI, Anthropic, Google, OpenRouter, any OpenAI-compatible URL), key encrypted, pick one per agent (`Agent.model`); scheduled runs use it, else the default. MCP tools `add_model`, `my_models`, `set_model_key`, `test_model`, `set_agent_model`, `remove_model`; web: Models folder on the agent page (switch, add, set key, test). Provider wiring checked offline; **no live provider call made yet**. Migration `20261003223000_ai_models.sql` not yet pushed
+- [x] Agent page skill tree (2026-10-03): Visvine-style explorer replaces the flat doc list: folders Context / Tables / Tools / Models / Schedules with counts, nested notes by `/` in titles, search (names + text, highlights, Enter opens first hit), breadcrumbs, red setup dots. Checked at 1440px and 390px (no overflow)
 
 ## Next
-- [ ] Create the Supabase project, set `DATABASE_URL` / `DIRECT_URL` / `CONNECTOR_SECRETS_KEY` (local + Vercel), `pnpm db:push && pnpm db:seed` — switch to `db:migrate` migrations before real users
+- [ ] Push the `ai_models` migration (after `agent_schedules`)
+- [ ] Push the `agent_schedules` migration; set `CRON_SECRET` (+ AI Gateway) on `agents-space-mcp`. Every-minute cron needs Vercel Pro
+- [ ] Web: show / edit schedules and recent runs on the agent page
+- [ ] Create the Supabase project, set `DATABASE_URL` / `DIRECT_URL` / `CONNECTOR_SECRETS_KEY` (local + Vercel), `pnpm db:push` — switch to `db:migrate` migrations before real users
 - [x] `apps/web` deployed: Vercel project `agents-space-web` (team SUPAYAPPERS, root dir `apps/web`, prod env set) → https://agents-space-web.vercel.app; MCP on `agents-space-mcp` → https://agents-space-mcp.vercel.app (CLI deploys, no git integration yet)
 - [ ] Deploy `apps/mcp` as its own Vercel project; set `PUBLIC_MCP_ORIGIN`, `NEXT_PUBLIC_MCP_URL`
 - [ ] Web: edit instructions / notes, publish/unpublish, invite a person by handle (MCP covers inviting and revoking via `allow_access` / `revoke_access` with `agent_id`; the web has no UI for it)
@@ -48,6 +57,8 @@ _Last updated: 2026-10-03_
 
 ## Known gaps
 - Ids and handles are a public namespace: id collisions (suffixing in `register_agent`/`create_agent`, `/api/handles/<h>`, `claim_space`) reveal that an id is taken, even by a private or draft agent, but nothing about it.
+- Google name + picture aren't stored on `User`, so agent tiles show them only to the signed-in owner (my agents, own agent pages); everyone else sees the `owner` handle and initials.
+- Agent tables: equality filters only (no ranges, sorting by column or full-text); max 20 tables, 40 columns, 10k rows per table, 16KB per row; no web UI for tables yet; anonymous callers on public agents can add rows but can't read them back.
 - Privacy, Security, X links on the landing are `#` placeholders.
 - No web (non-MCP) claim path yet: someone who won't install an MCP can't claim a space from the site.
 - `update_agent` can change a space's category, which makes it stop being a space.

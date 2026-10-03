@@ -25,6 +25,24 @@ export function Monogram({ name, size = 28, dark = false }: { name: string; size
   );
 }
 
+/** Who made something: Google picture when we have it, else initials. */
+export type Creator = { name: string; avatarUrl?: string };
+
+export function Avatar({ creator, size = 28 }: { creator: Creator; size?: number }) {
+  if (!creator.avatarUrl) return <Monogram name={creator.name} size={size} />;
+  return (
+    // Google profile picture; no-referrer avoids googleusercontent 403s.
+    <img
+      src={creator.avatarUrl}
+      alt=""
+      referrerPolicy="no-referrer"
+      draggable={false}
+      className="shrink-0 rounded-full object-cover"
+      style={{ width: size, height: size }}
+    />
+  );
+}
+
 /** Page opener for app pages: eyebrow, masked headline, optional aside. Wrap in `data-animate`. */
 export function PageTitle({ eyebrow, title, aside }: { eyebrow: string; title: ReactNode; aside?: ReactNode }) {
   return (
@@ -65,30 +83,34 @@ export function SectionHead({ label, count, delay = 0 }: { label: string; count?
 }
 
 /** Agent card in the landing's card language: white, hairline outline, lifts on hover. */
-export function AgentTile({ agent, badge, delay = 0 }: { agent: Agent; badge?: string; delay?: number }) {
+export function AgentTile({
+  agent,
+  badge,
+  creator,
+  delay = 0,
+}: {
+  agent: Agent;
+  badge?: string;
+  /** Overrides `agent.owner` (e.g. the signed-in owner's Google name and picture). */
+  creator?: Creator;
+  delay?: number;
+}) {
+  const by = creator ?? { name: agent.owner };
   return (
     <Link
       href={`/agents/${agent.id}`}
-      className="r lift group flex h-full flex-col gap-5 rounded-[14px] bg-white p-6 outline outline-1 -outline-offset-1 outline-edge"
+      className="r lift flex h-full flex-col gap-5 rounded-[14px] bg-white p-6 outline outline-1 -outline-offset-1 outline-edge"
       style={d(delay)}
     >
       <div className="flex items-start justify-between gap-3">
-        <span className="grid size-11 place-items-center rounded-xl bg-ink text-[15px] font-semibold text-white">
-          {initials(agent.name)}
-        </span>
-        <span className="flex items-center gap-2">
-          {badge && (
-            <span className="rounded-full px-2.5 py-1 font-mono text-[11px] uppercase tracking-[1px] text-ink outline outline-1 -outline-offset-1 outline-edge">
-              {badge}
-            </span>
-          )}
-          <span className="font-mono text-[11px] uppercase tracking-[1px] text-muted">{agent.protocol}</span>
-        </span>
+        <h3 className="pt-0.5 text-[20px] leading-6 font-medium tracking-[-0.6px] text-ink">{agent.name}</h3>
+        {badge && (
+          <span className="shrink-0 rounded-full px-2.5 py-1 font-mono text-[11px] uppercase tracking-[1px] text-ink outline outline-1 -outline-offset-1 outline-edge">
+            {badge}
+          </span>
+        )}
       </div>
-      <div className="flex flex-col gap-2">
-        <h3 className="text-[20px] leading-6 font-medium tracking-[-0.6px] text-ink">{agent.name}</h3>
-        <p className="line-clamp-2 text-[15px] leading-[22px] text-muted">{agent.tagline}</p>
-      </div>
+      <p className="-mt-2 line-clamp-2 text-[15px] leading-[22px] text-muted">{agent.tagline}</p>
       {agent.tools.length > 0 && (
         <ul className="flex flex-wrap gap-1.5">
           {agent.tools.slice(0, 4).map((t) => (
@@ -101,14 +123,9 @@ export function AgentTile({ agent, badge, delay = 0 }: { agent: Agent; badge?: s
           )}
         </ul>
       )}
-      <div className="mt-auto flex items-center justify-between gap-3 border-t border-edge pt-4">
-        <span className="flex min-w-0 items-center gap-2">
-          <Monogram name={agent.owner} size={22} />
-          <span className="truncate text-[14px] text-ink">{agent.owner}</span>
-        </span>
-        <span className="shrink-0 text-[14px] text-muted transition-transform duration-300 group-hover:translate-x-1" aria-hidden>
-          →
-        </span>
+      <div className="mt-auto flex min-w-0 items-center gap-2 border-t border-edge pt-4">
+        <Avatar creator={by} size={22} />
+        <span className="truncate text-[14px] text-ink">{by.name}</span>
       </div>
     </Link>
   );

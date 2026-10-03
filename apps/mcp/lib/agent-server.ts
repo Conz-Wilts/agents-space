@@ -1,34 +1,16 @@
 import { createMcpHandler } from "mcp-handler";
 import { z } from "zod";
-import { store, loadSkill, runAgentAction, scopedActions, type ActionParam } from "@agents-space/core";
+import { store, actionInputSchema, loadSkill, runAgentAction, scopedActions } from "@agents-space/core";
 import { currentUser, metadataPathFor, oauthEnabled, requireUser, withAuth } from "@/lib/auth";
 import { reachable } from "@/lib/access";
 import { safe, text } from "@/lib/format";
-
-const zodFor: Record<ActionParam["type"], () => z.ZodType> = {
-  string: () => z.string(),
-  number: () => z.number(),
-  boolean: () => z.boolean(),
-  object: () => z.record(z.string(), z.unknown()),
-  array: () => z.array(z.unknown()),
-};
-
-/** A tool input schema from an action's declared params. */
-function paramsSchema(params: Record<string, ActionParam>) {
-  return z.object(
-    Object.fromEntries(
-      Object.entries(params).map(([k, p]) => {
-        const t = p.description ? zodFor[p.type]().describe(p.description) : zodFor[p.type]();
-        return [k, p.required ? t : t.optional()];
-      }),
-    ),
-  );
-}
+import { registerRowTools } from "@/lib/table-tools";
 
 /**
  * One hosted agent as its own MCP server — the link an owner shares (website, Google Business
- * profile, another agent's config). Tools = the agent's scoped connector actions; the skill is
- * sent as server instructions and via the `instructions` tool. No access → only request_access.
+ * profile, another agent's config). Tools = the agent's scoped connector actions and its data
+ * tables; the skill is sent as server instructions and via the `instructions` tool. No access →
+ * only request_access.
  */
 async function serve(req: Request, id: string) {
   const userId = req.auth?.clientId;
@@ -66,13 +48,15 @@ async function serve(req: Request, id: string) {
         async () => text(skill),
       );
 
+      registerRowTools(server, agent.id);
+
       for (const a of actions)
         server.registerTool(
           `${a.connector}__${a.action}`.slice(0, 64),
           {
             title: a.action.replace(/_/g, " "),
             description: a.description,
-            inputSchema: paramsSchema(a.params),
+            inputSchema: actionInputSchema(a.params),
           },
           safe(async (args: Record<string, unknown>, c) => {
             // Re-check: access may have been revoked since this server was built.

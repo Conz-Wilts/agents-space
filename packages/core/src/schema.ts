@@ -71,13 +71,20 @@ export const AgentSchema = z.object({
    */
   kind: z.enum(["hosted", "external"]).default("external"),
   visibility: VisibilitySchema.default("public"),
+  /**
+   * `skill`: for other people's agents to call (the default). `scheduled`: works for its owner
+   * on a schedule (see `AgentScheduleSchema`); owner-only, never listed or shared.
+   */
+  mode: z.enum(["skill", "scheduled"]).default("skill"),
   /** Drafts are only visible to their owner. */
   status: z.enum(["draft", "published"]).default("published"),
-  /** User id of the owner (absent for seed listings). */
+  /** User id of the owner (absent for anonymous external listings). */
   ownerId: z.string().optional(),
   /** The skill: how the agent should behave. */
   instructions: z.string().default(""),
   connectors: z.array(ConnectorScopeSchema).default([]),
+  /** Name of one of the owner's models (`Model`) that runs it; unset = the platform default. */
+  model: z.string().optional(),
 });
 export type Agent = z.infer<typeof AgentSchema>;
 
@@ -91,6 +98,91 @@ export const ContextNoteSchema = z.object({
   updatedAt: z.string(),
 });
 export type ContextNote = z.infer<typeof ContextNoteSchema>;
+
+export const TableColumnSchema = z.object({
+  name: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/),
+  type: z.enum(["text", "number", "boolean", "date", "datetime", "json"]).default("text"),
+  description: z.string().default(""),
+  required: z.boolean().default(false),
+});
+export type TableColumn = z.infer<typeof TableColumnSchema>;
+
+/**
+ * What callers of an agent (not its owner) may do with a table's rows.
+ * `none` owner only · `insert` add rows · `own` add rows and read/change/delete their own ·
+ * `read` read all rows · `write` read and change all rows.
+ */
+export const CallerAccessSchema = z.enum(["none", "insert", "own", "read", "write"]);
+export type CallerAccess = z.infer<typeof CallerAccessSchema>;
+
+/** A data table an agent keeps, e.g. reservations or leads. Every hosted agent has `outputs`. */
+export const DataTableSchema = z.object({
+  agentId: z.string(),
+  name: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/),
+  title: z.string(),
+  /** Markdown: what the table is for and how the agent should use it. Part of the skill. */
+  context: z.string().default(""),
+  columns: z.array(TableColumnSchema).default([]),
+  callerAccess: CallerAccessSchema.default("own"),
+  /** True for the default `outputs` table until the owner customises it. */
+  builtIn: z.boolean().default(false),
+  updatedAt: z.string(),
+});
+export type DataTable = z.infer<typeof DataTableSchema>;
+
+export const TableRowSchema = z.object({
+  id: z.string(),
+  agentId: z.string(),
+  table: z.string(),
+  data: z.record(z.string(), z.unknown()),
+  /** User id of whoever added it; absent for anonymous callers. */
+  createdBy: z.string().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type TableRow = z.infer<typeof TableRowSchema>;
+
+/**
+ * Where an agent's LLM comes from. `gateway` = Vercel AI Gateway (any `<vendor>/<model>` id,
+ * no key needed); the others call the provider directly with the owner's API key. `custom` is
+ * any OpenAI-compatible endpoint (`baseUrl`).
+ */
+export const ModelProviderSchema = z.enum(["gateway", "openai", "anthropic", "google", "openrouter", "custom"]);
+export type ModelProvider = z.infer<typeof ModelProviderSchema>;
+
+/** A model an owner added, named `<handle>-<name>` like connectors. The API key is stored encrypted, never returned. */
+export const ModelSchema = z.object({
+  name: z.string(),
+  ownerId: z.string(),
+  title: z.string(),
+  provider: ModelProviderSchema,
+  /** The provider's model id, e.g. `gpt-5`, `claude-sonnet-5-5`, `deepseek/deepseek-chat` (OpenRouter). */
+  model: z.string().min(1),
+  baseUrl: z.string().url().optional(),
+  hasKey: z.boolean().default(false),
+  createdAt: z.string(),
+});
+export type Model = z.infer<typeof ModelSchema>;
+
+/** When a `scheduled` agent runs by itself, and what it should do each time. */
+export const AgentScheduleSchema = z.object({
+  id: z.string(),
+  agentId: z.string(),
+  /** Plain-language task for this run, e.g. "Summarise yesterday's reservations". */
+  task: z.string().min(3),
+  /** 5-field cron expression (minute hour day month weekday), read in `timezone`. */
+  cron: z.string(),
+  /** IANA timezone, e.g. "Pacific/Auckland". */
+  timezone: z.string().default("UTC"),
+  enabled: z.boolean().default(true),
+  nextRunAt: z.string(),
+  lastRunAt: z.string().optional(),
+  lastStatus: z.enum(["ok", "error"]).optional(),
+  /** Final answer of the last run, or its error. */
+  lastResult: z.string().optional(),
+  createdAt: z.string(),
+});
+export type AgentSchedule = z.infer<typeof AgentScheduleSchema>;
 
 export const ActionParamSchema = z.object({
   type: z.enum(["string", "number", "boolean", "object", "array"]).default("string"),

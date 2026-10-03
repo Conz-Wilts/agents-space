@@ -61,6 +61,8 @@ model User {
   connectors     Connector[]
   accessRequests AccessRequest[]
   deviceLogins   DeviceLogin[]
+  aiModels       AiModel[]
+  tableRows      TableRow[]
 }
 
 model Agent {
@@ -78,6 +80,10 @@ model Agent {
   kind         AgentKind   @default(external)
   visibility   Visibility  @default(public)
   status       AgentStatus @default(published)
+  /// skill | scheduled (check constraint in the Supabase schema)
+  mode         String      @default("skill")
+  /// AiModel.name that runs it; null = platform default
+  model        String?
   instructions String      @default("")
   createdAt    DateTime    @default(now())
 
@@ -87,6 +93,10 @@ model Agent {
   notes          ContextNote[]
   connectors     AgentConnector[]
   accessRequests AccessRequest[]
+  tables         AgentTable[]
+  tableRows      TableRow[]
+  schedules      AgentSchedule[]
+  modelRef       AiModel?        @relation(fields: [model], references: [name], onDelete: SetNull)
 
   @@index([status])
   @@index([ownerId])
@@ -106,6 +116,25 @@ model ContextNote {
 }
 
 /// A connection to an external system. Actions are declarative (see ConnectorActionSchema).
+/// An LLM an owner added: provider + model id, API key encrypted. Named `<owner handle>-<name>`.
+model AiModel {
+  name          String   @id
+  title         String
+  /// gateway | openai | anthropic | google | openrouter | custom (check constraint in the Supabase schema)
+  provider      String
+  modelId       String
+  baseUrl       String?
+  keyCiphertext String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  ownerId String
+  owner   User    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  agents  Agent[]
+
+  @@index([ownerId])
+}
+
 model Connector {
   /// `<owner handle>-<name>`
   name        String   @id
@@ -149,6 +178,63 @@ model AgentConnector {
   connector Connector @relation(fields: [connectorName], references: [name], onDelete: Cascade)
 
   @@id([agentId, connectorName])
+}
+
+/// A data table an agent keeps (reservations, leads, outputs). Rows live in TableRow.
+model AgentTable {
+  agentId      String
+  name         String
+  title        String
+  /// Markdown: what the table is for and how the agent should use it. Included in the skill.
+  context      String   @default("")
+  /// Column definitions (see TableColumnSchema).
+  columns      Json     @default("[]")
+  /// none | insert | own | read | write (check constraint in the Supabase schema)
+  callerAccess String   @default("own")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@id([agentId, name])
+}
+
+/// One row of an agent's table. No FK to AgentTable: the built-in `outputs` table is virtual until customised.
+model TableRow {
+  id        String   @id @default(uuid())
+  agentId   String
+  tableName String
+  data      Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  agent     Agent   @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  createdBy String?
+  creator   User?   @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+
+  @@index([agentId, tableName, createdAt])
+}
+
+/// When a scheduled agent runs by itself (cron in `timezone`) and what it does each time.
+model AgentSchedule {
+  id         String    @id @default(uuid())
+  agentId    String
+  task       String
+  cron       String
+  timezone   String    @default("UTC")
+  enabled    Boolean   @default(true)
+  nextRunAt  DateTime
+  lastRunAt  DateTime?
+  /// ok | error
+  lastStatus String?
+  lastResult String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([enabled, nextRunAt])
+  @@index([agentId])
 }
 
 model AccessRequest {

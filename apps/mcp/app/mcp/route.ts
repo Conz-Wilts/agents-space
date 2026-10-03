@@ -16,12 +16,21 @@ import {
   claimSpace,
   getSpace,
   VisibilitySchema,
+  agentTables,
+  defineTable,
+  describeTable,
+  dropTable,
+  setTableContext,
+  OUTPUTS_TABLE,
   type Agent,
   type User,
 } from "@agents-space/core";
 import { currentUser, metadataPathFor, oauthEnabled, requireUser, withAuth } from "@/lib/auth";
 import { reachable } from "@/lib/access";
 import { VISIBILITY_HELP, agentEndpoint, fmt, origin, safe, spaceEndpoint, text } from "@/lib/format";
+import { registerRowTools } from "@/lib/table-tools";
+import { registerScheduleTools } from "@/lib/schedule-tools";
+import { registerModelTools } from "@/lib/model-tools";
 
 let base = origin();
 const WEB_URL = process.env.NEXT_PUBLIC_WEB_URL ?? "http://localhost:3000";
@@ -59,9 +68,10 @@ async function accessTarget(ctx: Parameters<typeof requireUser>[0], agentId?: st
 
 /** Where the space stands and what to do next. */
 async function spaceStatus(user: User, space: Agent) {
-  const [notes, actions, requests] = await Promise.all([
+  const [notes, actions, tables, requests] = await Promise.all([
     store.listNotes(space.id),
     scopedActions(space),
+    agentTables(space),
     store.listAccessRequests({ ownerId: user.id }),
   ]);
   const mine = requests.filter((r) => r.agentId === space.id);
@@ -74,13 +84,14 @@ async function spaceStatus(user: User, space: Agent) {
     "",
     `Shared context: ${notes.length ? notes.map((n) => n.title).join(", ") : "nothing yet"}`,
     `Actions it can take: ${actions.length ? actions.map(actionSignature).join(", ") : "none yet"}`,
+    `Data tables: ${tables.map((t) => t.name).join(", ")}`,
     `People with access: ${approved}${pending ? ` (${pending} waiting: list_access_requests)` : ""}`,
     "",
     "Your rules:",
     space.instructions,
     "",
     `Next steps (agent_id "${space.id}"):`,
-    "1. Share what it can use: add_context_note (availability, prices, policies, FAQs), or create_connector + attach_connector for a calendar or other system.",
+    "1. Share what it can use: add_context_note (availability, prices, policies, FAQs), create_table for data it should keep (bookings, requests, leads), or create_connector + attach_connector for a calendar or other system.",
     "2. Set your rules in plain words with update_agent instructions: what it answers alone, what it asks you first, what it never touches.",
     `3. Decide who can reach you: allow_access("@their-handle") (list_access, revoke_access). Their agents then call ask_space("${space.id}"). Visibility is "${space.visibility}"; change it with update_agent visibility (public, listed, restricted, private).`,
   ].join("\n");
@@ -123,6 +134,9 @@ const agentBase = {
   tools: z.array(z.string()).describe("Products it operates, e.g. ['Google Reviews','OpenTable']"),
   category: z.string(),
   visibility: VisibilitySchema.describe(VISIBILITY_HELP),
+  mode: z
+    .enum(["skill", "scheduled"])
+    .describe("skill = other people's agents call it (shared over MCP); scheduled = it runs by itself for you at set times (schedule_agent), owner-only and never listed"),
   pricing: z.enum(["free", "usage", "subscription", "contact"]),
 };
 
@@ -133,6 +147,7 @@ const createAgentInput = z.object({
   tools: agentBase.tools.default([]),
   category: agentBase.category.default("General"),
   visibility: agentBase.visibility.default("public"),
+  mode: agentBase.mode.default("skill"),
   pricing: agentBase.pricing.default("free"),
 });
 
@@ -389,7 +404,7 @@ const handler = createMcpHandler(
       safe(async ({ agent_id, message }, ctx) => {
         const user = await requireUser(ctx);
         const a = await reachable(agent_id, user.id);
-        if (!a || a.status !== "published") throw new Error(`No published agent "${agent_id}".`);
+        if (!a || a.status !== "published" || a.mode === "scheduled") throw new Error(`No published agent "${agent_id}".`);
         if (await store.hasAccess(a.id, user.id)) return text(`You already have access to ${a.name}.`);
         const r = await store.requestAccess(a.id, user.id, message);
         return text(`Access request ${r.id} for ${a.name} is ${r.status}. Check with my_access_requests.`);
@@ -438,14 +453,20 @@ const handler = createMcpHandler(
       {
         title: "Create an agent",
         description:
-          "Step 1 of building an agent from natural language. Creates a DRAFT hosted agent from plain-language instructions. Next: add_context_note (menus, policies, FAQs), create_connector + attach_connector (the systems it acts in), test_agent, publish_agent.",
+          "Step 1 of building an agent from natural language. Creates a DRAFT hosted agent from plain-language instructions. First ask which kind: a skill other people's agents use (mode skill, default), or an agent that runs for the owner on a schedule (mode scheduled, then schedule_agent). It comes with a built-in 'outputs' table. Next: add_context_note (menus, policies, FAQs), create_table for data it keeps (e.g. reservations), create_connector + attach_connector (external systems it acts in), test_agent, publish_agent.",
         inputSchema: createAgentInput,
       },
       safe(async (input, ctx) => {
         const user = await requireUser(ctx);
         let a = await store.addAgent({ ...input, kind: "hosted", status: "draft", protocol: "mcp", owner: `@${user.handle}`, ownerId: user.id });
         a = await store.updateAgent(a.id, { endpoint: agentEndpoint(base, a.id) });
-        return text(`Draft agent ${a.id} created.\n\n${fmt(a)}\n\nNext: add_context_note, create_connector → attach_connector, test_agent, publish_agent.`);
+        if (a.mode === "scheduled")
+          return text(
+            `Scheduled agent ${a.id} created: it works for you, nobody else can call it.\n\n${fmt(a)}\n\nNext: add_context_note, create_table for data it keeps, create_connector → attach_connector for systems it acts in, then schedule_agent (task + cron + timezone) and run_schedule_now to try it. No need to publish.`,
+          );
+        return text(
+          `Draft agent ${a.id} created, with a built-in "${OUTPUTS_TABLE}" table for what it produces.\n\n${fmt(a)}\n\nNext: add_context_note, create_table for the data this agent keeps (no connector needed), create_connector → attach_connector for outside systems, test_agent, publish_agent.`,
+        );
       }),
     );
 
@@ -648,6 +669,7 @@ const handler = createMcpHandler(
       safe(async ({ agent_id, visibility }, ctx) => {
         const user = await requireUser(ctx);
         const a = await ownedAgent(agent_id, user.id);
+        if (a.mode === "scheduled") throw new Error(`${a.name} is a scheduled agent: it runs for you and isn't published. Use schedule_agent, or update_agent mode "skill" to share it instead.`);
         const problems = await checkAgent(a);
         const blocking = problems.filter((p) => !p.includes("needs secret"));
         if (blocking.length) throw new Error(`Fix before publishing:\n${blocking.map((p) => `- ${p}`).join("\n")}`);
@@ -679,13 +701,94 @@ const handler = createMcpHandler(
       }),
     );
 
+    /* ───────────── tables ───────────── */
+
+    const column = z.object({
+      name: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/).describe("snake_case"),
+      type: z.enum(["text", "number", "boolean", "date", "datetime", "json"]).default("text").describe("date = YYYY-MM-DD, datetime = ISO 8601"),
+      description: z.string().default("").describe("What goes here; callers' LLMs read this"),
+      required: z.boolean().default(false),
+    });
+    const callerAccess = z
+      .enum(["none", "insert", "own", "read", "write"])
+      .describe(
+        "What callers (not you) may do: none = owner only; insert = add rows only; own = add rows and see/change/delete their own (bookings, requests); read = read every row (availability, catalogue); write = read and change every row",
+      );
+
+    server.registerTool(
+      "create_table",
+      {
+        title: "Create a data table",
+        description: [
+          "Give an agent its own table on Agents Space: no database or connector needed. Design tables from the agent's purpose, e.g. a restaurant reservations agent:",
+          "reservations: name* text, phone text, party_size* number, date* date, time* text, notes text, status text (requested|confirmed|cancelled); caller_access own; context: 'One row per booking request. Check availability first with query_rows on date. New rows are status requested.'",
+          "Every agent also has a built-in 'outputs' table (kind, summary, data) for what it produced; create_table 'outputs' to customise it.",
+          "Same name again replaces the definition; existing rows are kept. The table's context goes into the agent's skill, so explain when and how to use it.",
+        ].join("\n"),
+        inputSchema: z.object({
+          agent_id: z.string(),
+          name: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/).describe("snake_case, e.g. 'reservations'"),
+          title: z.string().optional(),
+          context: z.string().optional().describe("Markdown: what the table is for, when to add/read rows, what values mean"),
+          columns: z.array(column).max(40).describe("Leave empty for a free-form table (any JSON object per row)"),
+          caller_access: callerAccess.optional().describe("Default own. " + (callerAccess.description ?? "")),
+        }),
+      },
+      safe(async ({ agent_id, caller_access, ...spec }, ctx) => {
+        const user = await requireUser(ctx);
+        const a = await ownedAgent(agent_id, user.id);
+        const t = await defineTable(a, { ...spec, callerAccess: caller_access });
+        return text(`Table saved on ${a.name}.\n\n${describeTable(t, { rows: await store.countRows(a.id, t.name) })}\n\nAdd rows with insert_rows; set its guidance with set_table_context.`);
+      }),
+    );
+
+    server.registerTool(
+      "set_table_context",
+      {
+        title: "Set a table's context",
+        description: "Explain what a table is for and how the agent should use it (when to add rows, what statuses mean, what to check first). Included in the agent's skill. Replaces the previous context.",
+        inputSchema: z.object({ agent_id: z.string(), table: z.string(), context: z.string().describe("Markdown") }),
+      },
+      safe(async ({ agent_id, table, context }, ctx) => {
+        const user = await requireUser(ctx);
+        const a = await ownedAgent(agent_id, user.id);
+        const t = await setTableContext(a, table, context);
+        return text(`Context saved.\n\n${describeTable(t)}`);
+      }),
+    );
+
+    server.registerTool(
+      "drop_table",
+      {
+        title: "Delete a data table",
+        description: "Delete one of your agent's tables and ALL its rows. Dropping 'outputs' empties it and restores the default definition.",
+        inputSchema: z.object({ agent_id: z.string(), table: z.string(), confirm: z.literal(true).describe("Must be true: rows can't be recovered") }),
+      },
+      safe(async ({ agent_id, table }, ctx) => {
+        const user = await requireUser(ctx);
+        const a = await ownedAgent(agent_id, user.id);
+        await dropTable(a, table);
+        return text(`Dropped ${table} from ${a.name}.`);
+      }),
+    );
+
+    registerRowTools(server);
+
+    /* ───────────── schedules ───────────── */
+
+    registerScheduleTools(server);
+
+    /* ───────────── models ───────────── */
+
+    registerModelTools(server);
+
     /* ───────────── use ───────────── */
 
     server.registerTool(
       "use_agent",
       {
         title: "Use an agent",
-        description: "Load an agent's skill: its instructions, context and the actions you may run. Follow the instructions and call run_agent_action to act.",
+        description: "Load an agent's skill: its instructions, context, data tables and the actions you may run. Follow the instructions; act with run_agent_action and the table tools (insert_rows, query_rows, update_row, delete_row).",
         inputSchema: z.object({ agent_id: z.string() }),
       },
       safe(async ({ agent_id }, ctx) => {
@@ -696,7 +799,7 @@ const handler = createMcpHandler(
         if (a.kind === "external") return text(`${a.name} is an external agent. Connect to it directly: ${a.endpoint ?? "(no endpoint listed)"} via ${a.protocol}.`);
         const actions = await scopedActions(a);
         return text(
-          `${await loadSkill(a)}\n\n## Actions (call run_agent_action)\n${actions.map((x) => `- ${actionSignature(x)}: ${x.description}`).join("\n") || "none — this agent is instructions only"}`,
+          `${await loadSkill(a)}\n\n## Actions (call run_agent_action)\n${actions.map((x) => `- ${actionSignature(x)}: ${x.description}`).join("\n") || "none"}\n\nOn this server, pass agent_id "${a.id}" to run_agent_action and the table tools.`,
         );
       }),
     );
@@ -759,7 +862,7 @@ const handler = createMcpHandler(
             role: "user",
             content: {
               type: "text",
-              text: `Help me build an Agents Space agent that handles: ${job}.\n\nInterview me briefly (max 4 questions in one message): who uses it, the rules it must follow, the systems it must act in (their API docs or MCP URL, and how they authenticate), visibility (public, listed, restricted or private). Then: create_account if I have no key → create_agent with clear instructions → add_context_note for policies/FAQs → create_connector for each system (http action templates or mcp_url; secrets as {{secret.NAME}} placeholders, never inline) → set_connector_secret when I give a key → attach_connector with the minimum actions → test_agent → publish_agent. Show me the endpoint at the end.`,
+              text: `Help me build an Agents Space agent that handles: ${job}.\n\nInterview me briefly (max 4 questions in one message): is it a skill other people's agents use, or should it run for me on a schedule (when, in which timezone), who uses it, the rules it must follow, the systems it must act in (their API docs or MCP URL, and how they authenticate), visibility (public, listed, restricted or private). Then: create_account if I have no key → create_agent with clear instructions → add_context_note for policies/FAQs → create_table for each kind of record the agent keeps (pick columns, caller_access and a context that says when to read/write it; e.g. reservations for a restaurant) → create_connector only for outside systems it must act in for each system (http action templates or mcp_url; secrets as {{secret.NAME}} placeholders, never inline) → set_connector_secret when I give a key → attach_connector with the minimum actions → test_agent → publish_agent. Show me the endpoint at the end. For a scheduled agent: create_agent with mode scheduled, skip publishing, then schedule_agent and run_schedule_now to show me a first report.`,
             },
           },
         ],
@@ -769,7 +872,7 @@ const handler = createMcpHandler(
   {
     serverInfo: { name: "agents-space", version: "0.2.0" },
     instructions:
-      "Agents Space gives people and businesses a space: their own MCP address that other people's agents call instead of waiting on them. To reach someone (\"ask emma if Saturday works\", \"check @marcos-trattoria for a table\"), call ask_space with their handle. If the user just connected, call my_space first (claim_space if they have none) and help them set it up; allow_access / revoke_access / list_access manage who can use it. Agents Space is also a directory of agents as shareable skills. Find agents (describe_bottleneck, search_agents), use them (use_agent, run_agent_action), request access to ones that need approval (request_access), or build your own in natural language (prompt build_agent, or create_agent → add_context_note → create_connector → attach_connector → test_agent → publish_agent).",
+      "Agents Space gives people and businesses a space: their own MCP address that other people's agents call instead of waiting on them. To reach someone (\"ask emma if Saturday works\", \"check @marcos-trattoria for a table\"), call ask_space with their handle. If the user just connected, call my_space first (claim_space if they have none) and help them set it up; allow_access / revoke_access / list_access manage who can use it. Agents Space is also a directory of agents as shareable skills. Find agents (describe_bottleneck, search_agents), use them (use_agent, run_agent_action), request access to ones that need approval (request_access), or build your own in natural language (prompt build_agent, or create_agent → add_context_note → create_table → create_connector → attach_connector → test_agent → publish_agent). Agents keep their own data in tables (create_table; built-in 'outputs'); no connector is needed to store data. An agent is either a skill other people's agents call (mode skill) or works for its owner on a schedule (mode scheduled → schedule_agent, run_schedule_now, schedule_runs); add_model / set_agent_model pick the LLM it runs on.",
   },
 );
 

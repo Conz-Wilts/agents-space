@@ -30,6 +30,16 @@ ALTER TABLE "public"."Agent"
 ALTER TABLE "public"."Agent"
   ADD COLUMN "visibility" public."Visibility" NOT NULL DEFAULT 'public'::public."Visibility";
 
+ALTER TABLE "public"."Agent"
+  ADD COLUMN "mode" text NOT NULL DEFAULT 'skill'::text;
+
+ALTER TABLE "public"."Agent"
+  ADD CONSTRAINT "Agent_mode_check" CHECK (mode IN ('skill', 'scheduled'));
+
+-- FK to AiModel is added in AiModel.sql.
+ALTER TABLE "public"."Agent"
+  ADD COLUMN "model" text;
+
 CREATE INDEX "Agent_ownerId_idx" ON public."Agent" USING btree ("ownerId");
 
 CREATE INDEX "Agent_status_idx" ON public."Agent" USING btree (status);
