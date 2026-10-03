@@ -3,7 +3,7 @@ import { Prisma, PrismaClient } from "../generated/prisma/client";
 import { matchAgents } from "../match";
 import { AgentSchema, ConnectorActionSchema, type AccessRequest, type Agent, type Bottleneck, type Connector, type ContextNote, type User } from "../schema";
 import type { Store } from "./index";
-import { hashKey, newApiKey, normalizeHandle, slug } from "./util";
+import { handleCandidates, hashKey, newApiKey, normalizeHandle, slug } from "./util";
 
 const agentInclude = { connectors: true } satisfies Prisma.AgentInclude;
 type AgentRow = Prisma.AgentGetPayload<{ include: typeof agentInclude }>;
@@ -21,7 +21,14 @@ function toAgent(r: AgentRow): Agent {
   });
 }
 
-const toUser = (r: { id: string; handle: string; keyHash: string; createdAt: Date }): User => ({ ...r, createdAt: iso(r.createdAt) });
+const toUser = (r: Prisma.UserGetPayload<object>): User => ({
+  id: r.id,
+  handle: r.handle,
+  keyHash: r.keyHash ?? undefined,
+  authId: r.authId ?? undefined,
+  email: r.email ?? undefined,
+  createdAt: iso(r.createdAt),
+});
 
 const toNote = (r: { agentId: string; slug: string; title: string; body: string; updatedAt: Date }): ContextNote => ({ ...r, updatedAt: iso(r.updatedAt) });
 
@@ -141,6 +148,26 @@ export function createPrismaStore(connectionString: string): Store {
     async userByApiKey(key) {
       const r = await db.user.findUnique({ where: { keyHash: hashKey(key) } });
       return r ? toUser(r) : undefined;
+    },
+    async userForAuth({ authId, email, name }) {
+      const found = await db.user.findUnique({ where: { authId } });
+      if (found) return toUser(found);
+      for (const handle of handleCandidates({ email, name })) {
+        try {
+          return toUser(await db.user.create({ data: { handle, authId, email } }));
+        } catch (e) {
+          if (!(e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002")) throw e;
+          // Lost a race on authId (concurrent first sign-in): return the winner.
+          const again = await db.user.findUnique({ where: { authId } });
+          if (again) return toUser(again);
+        }
+      }
+      throw new Error("Could not pick a free handle.");
+    },
+    async rotateApiKey(userId) {
+      const apiKey = newApiKey();
+      await db.user.update({ where: { id: userId }, data: { keyHash: hashKey(apiKey) } });
+      return apiKey;
     },
 
     async saveConnector(c) {

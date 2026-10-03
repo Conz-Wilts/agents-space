@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { store } from "@agents-space/core";
+import { SiteHeader } from "../header";
 import { AgentCard, PersonIcon } from "../ui";
-
-const MCP_URL = process.env.NEXT_PUBLIC_MCP_URL ?? "http://localhost:3001/mcp";
 
 export default async function Home({ searchParams }: PageProps<"/directory">) {
   const { q } = await searchParams;
@@ -16,19 +15,7 @@ export default async function Home({ searchParams }: PageProps<"/directory">) {
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-4 py-6 sm:px-6">
-      <header className="flex items-center justify-between">
-        <Link href="/directory" className="flex items-center gap-2 text-xl font-semibold tracking-tight">
-          <span className="size-7 rounded-lg bg-brand" aria-hidden />
-          Agent Book
-        </Link>
-        <a
-          href={MCP_URL}
-          title={MCP_URL}
-          className="flex h-8 items-center rounded-full bg-brand px-3 text-xs font-medium text-white hover:bg-brand-fg"
-        >
-          Connect
-        </a>
-      </header>
+      <SiteHeader />
 
       <form action="/directory" className="relative max-w-xl">
         <svg

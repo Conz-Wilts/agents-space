@@ -15,10 +15,11 @@ import {
   slug,
   type Agent,
 } from "@agents-space/core";
-import { currentUser, requireUser, withApiKey } from "@/lib/auth";
+import { currentUser, metadataPathFor, oauthEnabled, requireUser, withAuth } from "@/lib/auth";
 import { agentEndpoint, fmt, origin, safe, text } from "@/lib/format";
 
 let base = origin();
+const WEB_URL = process.env.NEXT_PUBLIC_WEB_URL ?? "http://localhost:3000";
 
 /** Agents a viewer can see, each flagged with whether they can use it. */
 async function withAccess(agents: Agent[], userId?: string) {
@@ -68,7 +69,7 @@ const handler = createMcpHandler(
       {
         title: "Create an account",
         description:
-          "Create an Agents Space account and get an API key (shown ONCE). Needed to build agents, own connectors and request access to private agents.",
+          "Create an Agents Space account and get an API key (shown ONCE). Needed to build agents, own connectors and request access to private agents. Humans can instead sign in with Google on the website and copy a key from their account page.",
         inputSchema: z.object({ handle: z.string().describe("Lowercase handle, e.g. 'luigis-trattoria'") }),
       },
       safe(async ({ handle }) => {
@@ -84,7 +85,7 @@ const handler = createMcpHandler(
       { title: "Who am I", description: "The signed-in account, if any.", inputSchema: z.object({}) },
       safe(async (_i, ctx) => {
         const u = await currentUser(ctx);
-        return text(u ? `Signed in as @${u.handle} (${u.id}).` : "Not signed in. Call create_account.");
+        return text(u ? `Signed in as @${u.handle} (${u.id}).` : `Not signed in. Sign in with Google at ${WEB_URL}/account to get an API key, or call create_account.`);
       }),
     );
 
@@ -570,9 +571,15 @@ const handler = createMcpHandler(
   },
 );
 
-const route = withApiKey((req) => {
-  base = origin(req);
-  return handler(req);
-});
+// With OAuth configured, the main server requires sign-in: the 401 is what makes MCP clients
+// start the Google sign-in flow. Without it (local dev, no Supabase) it stays open.
+const route = (req: Request) =>
+  withAuth(
+    (r) => {
+      base = origin(r);
+      return handler(r);
+    },
+    { required: oauthEnabled(), metadataPath: metadataPathFor("/mcp") },
+  )(req);
 
 export { route as GET, route as POST, route as DELETE };

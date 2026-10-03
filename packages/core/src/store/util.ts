@@ -10,3 +10,11 @@ export function normalizeHandle(handle: string) {
 }
 
 export const newApiKey = () => `as_${randomBytes(24).toString("base64url")}`;
+
+/** Handle candidates for a new web sign-in: from the name or email, then with random suffixes. */
+export function handleCandidates(auth: { email?: string; name?: string }): string[] {
+  let base = slug(auth.name || auth.email?.split("@")[0] || "").slice(0, 26);
+  if (base.length < 2) base = "user";
+  const suffix = () => randomBytes(3).toString("hex");
+  return [base, `${base}-${suffix()}`, `${base}-${suffix()}`, `user-${randomBytes(6).toString("hex")}`];
+}

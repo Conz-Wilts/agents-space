@@ -2,7 +2,7 @@ import { seedAgents } from "../seed";
 import { matchAgents } from "../match";
 import { AgentSchema, type AccessRequest, type Bottleneck, type Connector, type ContextNote, type User } from "../schema";
 import type { Store } from "./index";
-import { hashKey, newApiKey, normalizeHandle, slug } from "./util";
+import { handleCandidates, hashKey, newApiKey, normalizeHandle, slug } from "./util";
 
 const now = () => new Date().toISOString();
 
@@ -71,6 +71,22 @@ export function createMemoryStore(): Store {
     async userByApiKey(key) {
       const h = hashKey(key);
       return users.find((u) => u.keyHash === h);
+    },
+    async userForAuth({ authId, email, name }) {
+      const found = users.find((u) => u.authId === authId);
+      if (found) return found;
+      const handle = handleCandidates({ email, name }).find((h) => !users.some((u) => u.handle === h));
+      if (!handle) throw new Error("Could not pick a free handle.");
+      const user: User = { id: crypto.randomUUID(), handle, authId, email, createdAt: now() };
+      users.push(user);
+      return user;
+    },
+    async rotateApiKey(userId) {
+      const user = users.find((u) => u.id === userId);
+      if (!user) throw new Error("No such user.");
+      const apiKey = newApiKey();
+      user.keyHash = hashKey(apiKey);
+      return apiKey;
     },
 
     async saveConnector(c) {

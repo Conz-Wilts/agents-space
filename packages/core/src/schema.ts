@@ -1,11 +1,17 @@
 import { z } from "zod";
 
-/** A person (or org) on the platform. Authenticates to the MCP with an API key. */
+/**
+ * A person (or org) on the platform. Signs in on the web with Google (Supabase Auth) and/or
+ * authenticates to the MCP with an API key or a Supabase access token.
+ */
 export const UserSchema = z.object({
   id: z.string(),
   handle: z.string().regex(/^[a-z0-9-]{2,32}$/),
   /** sha256 of the API key. The key itself is shown once and never stored. */
-  keyHash: z.string(),
+  keyHash: z.string().optional(),
+  /** Supabase Auth user id, for accounts created by signing in on the web. */
+  authId: z.string().optional(),
+  email: z.string().optional(),
   createdAt: z.string(),
 });
 export type User = z.infer<typeof UserSchema>;

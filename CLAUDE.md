@@ -29,12 +29,12 @@ pnpm db:migrate   # create a migration (prisma migrate dev)
 pnpm db:seed      # example listings
 ```
 
-Env: one `.env.local` at the repo root (see `.env.example`): `DATABASE_URL` (Supabase pooled), `DIRECT_URL` (Supabase direct, for the CLI), `CONNECTOR_SECRETS_KEY`. Without `DATABASE_URL` the store is in-memory.
+Env: one `.env.local` at the repo root (see `.env.example`): `DATABASE_URL` (Supabase pooled), `DIRECT_URL` (Supabase direct, for the CLI), `CONNECTOR_SECRETS_KEY`, `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (Google sign-in via Supabase Auth). Without `DATABASE_URL` the store is in-memory.
 
 Test the MCP: `npx @modelcontextprotocol/inspector` → `http://localhost:3001/mcp`.
 
 ## MCP tools
-Main server `/mcp` (auth: `Authorization: Bearer as_...` or `?key=`; anonymous = read + public use):
+Main server `/mcp`. Auth: OAuth — MCP clients sign in with Google through Supabase Auth's OAuth 2.1 server (consent page: web `/oauth/consent`; metadata: `/.well-known/oauth-protected-resource/mcp`) — or an `as_` API key (`Authorization: Bearer` / `?key=`) generated at web `/account`. Sign-in is required when Supabase is configured; otherwise anonymous = read + public use:
 - Account: `create_account`, `whoami`
 - Discover: `describe_bottleneck`, `search_agents`, `list_agents`, `get_agent`
 - Access: `request_access`, `my_access_requests`, `list_access_requests`, `review_access_request`
@@ -42,7 +42,7 @@ Main server `/mcp` (auth: `Authorization: Bearer as_...` or `?key=`; anonymous =
 - Use: `use_agent` (skill text + scoped actions), `run_agent_action`
 - `register_agent` — list an *external* agent
 
-Per-agent server `/a/<id>/mcp`: the shareable link. Tools = `instructions` + one per scoped action (`<connector>__<action>`); without access only `request_access`.
+Per-agent server `/a/<id>/mcp`: the shareable link. Public agents work anonymously; private ones send clients through OAuth sign-in. Tools = `instructions` + one per scoped action (`<connector>__<action>`); without access only `request_access`.
 
 ## Rules
 - **Next.js 16 / mcp-handler 2 / MCP SDK v2 / zod 4** — APIs differ from older training data. Check `node_modules/next/dist/docs/` and `node_modules/mcp-handler/README.md` before guessing. `registerTool` takes `inputSchema: z.object(...)` (not a raw shape).
