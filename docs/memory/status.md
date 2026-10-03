@@ -40,6 +40,9 @@ _Last updated: 2026-10-03_
 - [x] Models (2026-10-03): owners add LLMs like Visvine's models/ (Vercel AI Gateway, OpenAI, Anthropic, Google, OpenRouter, any OpenAI-compatible URL), key encrypted, pick one per agent (`Agent.model`); scheduled runs use it, else the default. MCP tools `add_model`, `my_models`, `set_model_key`, `test_model`, `set_agent_model`, `remove_model`; web: Models folder on the agent page (switch, add, set key, test). Provider wiring checked offline; **no live provider call made yet**. Migration `20261003223000_ai_models.sql` not yet pushed
 - [x] Agent page skill tree (2026-10-03): Visvine-style explorer replaces the flat doc list: folders Context / Tables / Tools / Models / Schedules with counts, nested notes by `/` in titles, search (names + text, highlights, Enter opens first hit), breadcrumbs, red setup dots. Checked at 1440px and 390px (no overflow)
 
+## Testing
+- Test plan and results grid: [docs/test-plan.md](../test-plan.md)
+
 ## Next
 - [ ] Push the `ai_models` migration (after `agent_schedules`)
 - [ ] Push the `agent_schedules` migration; set `CRON_SECRET` (+ AI Gateway) on `agents-space-mcp`. Every-minute cron needs Vercel Pro
