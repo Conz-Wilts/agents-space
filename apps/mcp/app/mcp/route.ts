@@ -40,12 +40,15 @@ import {
   setPrice,
   stripeDashboardLink,
   SPACE_CATEGORY,
+  LOG_RETENTION_DAYS,
+  MAX_LOGS,
   type Agent,
   type User,
 } from "@agents-space/core";
 import { currentUser, metadataPathFor, oauthEnabled, requireUser, withAuth } from "@/lib/auth";
 import { reachable } from "@/lib/access";
 import { VISIBILITY_HELP, agentEndpoint, fmt, origin, safe, spaceEndpoint, text } from "@/lib/format";
+import { logged, logsText } from "@/lib/logged";
 import { registerRowTools } from "@/lib/table-tools";
 import { registerScheduleTools } from "@/lib/schedule-tools";
 import { registerModelTools } from "@/lib/model-tools";
@@ -291,7 +294,7 @@ const handler = createMcpHandler(
           "Reach a person or business by handle (e.g. '@emma', 'marcos-trattoria') through their space, as the signed-in user. Returns their rules, what they share and the actions you may run, then answer from that or call run_agent_action with agent_id = the handle. If they haven't allowed you, it says how to ask.",
         inputSchema: z.object({ handle: z.string().describe("Their handle, with or without @") }),
       },
-      safe(async ({ handle }, ctx) => {
+      logged("ask_space", ({ handle }) => plainHandle(handle), async ({ handle }: { handle: string }, ctx) => {
         const h = plainHandle(handle);
         const user = await currentUser(ctx);
         const a = await reachable(h, user?.id);
@@ -362,6 +365,25 @@ const handler = createMcpHandler(
         const allowed = await Promise.all(rs.filter((r) => r.status === "approved").map(line));
         const waiting = await Promise.all(rs.filter((r) => r.status === "pending").map(line));
         return text(`Allowed (${allowed.length}):\n${allowed.join("\n") || "nobody yet"}\n\nWaiting for you (${waiting.length}):\n${waiting.join("\n") || "none"}`);
+      }),
+    );
+
+    server.registerTool(
+      "agent_logs",
+      {
+        title: "An agent's call log",
+        description: `Recent calls to an agent (tool, input, result, ok/error), newest first, kept ${LOG_RETENTION_DAYS} days. On your own agent you see every caller's calls (narrow with caller); on anyone else's you see only your own.`,
+        inputSchema: z.object({
+          agent_id: z.string().describe("Agent id, or a handle for a space"),
+          caller: z.string().optional().describe("Owner only: one caller's handle"),
+          limit: z.number().int().min(1).max(MAX_LOGS).default(25),
+        }),
+      },
+      safe(async ({ agent_id, caller, limit }, ctx) => {
+        const user = await requireUser(ctx);
+        const a = await reachable(agent_id.trim().replace(/^@/, ""), user.id);
+        if (!a) throw new Error(`No agent "${agent_id}".`);
+        return text(await logsText(a, user.id, { caller, limit }));
       }),
     );
 
@@ -1045,11 +1067,15 @@ const handler = createMcpHandler(
       type: z.enum(["text", "number", "boolean", "date", "datetime", "json"]).default("text").describe("date = YYYY-MM-DD, datetime = ISO 8601"),
       description: z.string().default("").describe("What goes here; callers' LLMs read this"),
       required: z.boolean().default(false),
+      private: z
+        .boolean()
+        .default(false)
+        .describe("Personal details (name, phone, email, notes): only you and whoever added the row see it; other callers get the row without it"),
     });
     const callerAccess = z
-      .enum(["none", "insert", "own", "read", "write"])
+      .enum(["none", "insert", "own", "book", "read", "write"])
       .describe(
-        "What callers (not you) may do: none = owner only; insert = add rows only; own = add rows and see/change/delete their own (bookings, requests); read = read every row (availability, catalogue); write = read and change every row",
+        "What callers (not you) may do: none = owner only; insert = add rows only; own = add rows and see/change/delete only their own (requests, orders); book = add rows, see every row so they know what's taken, change/delete only their own, with private columns hidden on other people's rows (reservations, appointments); read = read every row (catalogue); write = read and change every row",
       );
 
     server.registerTool(
@@ -1058,7 +1084,8 @@ const handler = createMcpHandler(
         title: "Create a data table",
         description: [
           "Give an agent its own table on Agents Space: no database or connector needed. Design tables from the agent's purpose, e.g. a restaurant reservations agent:",
-          "reservations: name* text, phone text, party_size* number, date* date, time* text, notes text, status text (requested|confirmed|cancelled); caller_access own; context: 'One row per booking request. Check availability first with query_rows on date. New rows are status requested.'",
+          "reservations: name* text private, phone text private, party_size* number, date* date, time* text, notes text private, status text (requested|confirmed|cancelled); caller_access book; context: 'One row per booking. Check availability first with query_rows on date: rows there are taken times (you won't see who booked them). New rows are status requested.'",
+          "Mark personal details private whenever other callers can read the table (book, read, write), so they see what's taken but not who took it.",
           "Every agent also has a built-in 'outputs' table (kind, summary, data) for what it produced; create_table 'outputs' to customise it.",
           "Same name again replaces the definition; existing rows are kept. The table's context goes into the agent's skill, so explain when and how to use it.",
         ].join("\n"),
@@ -1128,7 +1155,7 @@ const handler = createMcpHandler(
         description: "Load an agent's skill: its instructions, context, data tables and the actions you may run. Follow the instructions; act with run_agent_action and the table tools (insert_rows, query_rows, update_row, delete_row).",
         inputSchema: z.object({ agent_id: z.string() }),
       },
-      safe(async ({ agent_id }, ctx) => {
+      logged("use_agent", ({ agent_id }) => agent_id, async ({ agent_id }: { agent_id: string }, ctx) => {
         const user = await currentUser(ctx);
         const a = await reachable(agent_id, user?.id);
         if (!a) throw new Error(`No agent "${agent_id}".`);
@@ -1148,13 +1175,17 @@ const handler = createMcpHandler(
         description: "Run one of an agent's scoped connector actions (see use_agent).",
         inputSchema: z.object({ agent_id: z.string(), connector: z.string(), action: z.string(), args: z.record(z.string(), z.unknown()).default({}) }),
       },
-      safe(async ({ agent_id, connector, action, args }, ctx) => {
-        const user = await currentUser(ctx);
-        const a = await reachable(agent_id, user?.id);
-        if (!a) throw new Error(`No access to "${agent_id}".`);
-        if (!(await store.hasAccess(a.id, user?.id))) throw new Error(`No access to "${agent_id}". Call request_access("${a.id}").`);
-        return text(JSON.stringify(await runAgentAction(a, connector, action, args), null, 2).slice(0, 20000));
-      }),
+      logged(
+        ({ connector, action }) => `${connector}__${action}`,
+        ({ agent_id }) => agent_id,
+        async ({ agent_id, connector, action, args }: { agent_id: string; connector: string; action: string; args: Record<string, unknown> }, ctx) => {
+          const user = await currentUser(ctx);
+          const a = await reachable(agent_id, user?.id);
+          if (!a) throw new Error(`No access to "${agent_id}".`);
+          if (!(await store.hasAccess(a.id, user?.id))) throw new Error(`No access to "${agent_id}". Call request_access("${a.id}").`);
+          return text(JSON.stringify(await runAgentAction(a, connector, action, args), null, 2).slice(0, 20000));
+        },
+      ),
     );
 
     /* ───────────── external listings ───────────── */

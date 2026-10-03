@@ -8,7 +8,7 @@ CREATE TABLE "public"."AgentTable" (
   "createdAt"    timestamp(3) without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt"    timestamp(3) without time zone NOT NULL,
   CONSTRAINT "AgentTable_pkey" PRIMARY KEY ("agentId", name),
-  CONSTRAINT "AgentTable_callerAccess_check" CHECK ("callerAccess" IN ('none', 'insert', 'own', 'read', 'write')),
+  CONSTRAINT "AgentTable_callerAccess_check" CHECK ("callerAccess" IN ('none', 'insert', 'own', 'book', 'read', 'write')),
   CONSTRAINT "AgentTable_agentId_fkey" FOREIGN KEY ("agentId") REFERENCES public."Agent"(id) ON UPDATE CASCADE ON DELETE CASCADE
 );
 

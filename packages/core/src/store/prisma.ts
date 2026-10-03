@@ -1,7 +1,7 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Prisma, PrismaClient } from "../generated/prisma/client";
 import { matchAgents } from "../match";
-import { ModelSchema, AgentSchema, AgentScheduleSchema, CallerAccessSchema, ConnectorActionSchema, TableColumnSchema, type AccessRequest, type Agent, type AgentSchedule, type Bottleneck, type Connector, type ContextNote, type DataTable, type DeviceLogin, type Model, type Payment, type Price, type TableRow, type User } from "../schema";
+import { ModelSchema, AgentSchema, AgentLogSchema, AgentScheduleSchema, CallerAccessSchema, ConnectorActionSchema, TableColumnSchema, type AccessRequest, type Agent, type AgentLog, type AgentSchedule, type Bottleneck, type Connector, type ContextNote, type DataTable, type DeviceLogin, type Model, type Payment, type Price, type TableRow, type User } from "../schema";
 import type { Store } from "./index";
 import { DEVICE_LOGIN_TTL_MS, RESERVED_HANDLES, handleCandidates, hashKey, newApiKey, newDeviceCode, newUserCode, normalizeHandle, normalizeUserCode, SPACE_CATEGORY, slug, spaceStatus, infoGate, useGate, passes } from "./util";
 
@@ -65,6 +65,9 @@ const toSchedule = (r: Prisma.AgentScheduleGetPayload<object>): AgentSchedule =>
     lastResult: r.lastResult ?? undefined,
     createdAt: iso(r.createdAt),
   });
+
+const toLog = (r: Prisma.AgentLogGetPayload<object>): AgentLog =>
+  AgentLogSchema.parse({ ...r, callerId: r.callerId ?? undefined, args: r.args ?? undefined, createdAt: iso(r.createdAt) });
 
 /** Schedule fields as Prisma data: ISO strings become Dates. */
 function scheduleData(p: Partial<AgentSchedule>) {
@@ -343,6 +346,22 @@ export function createPrismaStore(connectionString: string): Store {
     async claimSchedule(id, from, next) {
       const { count } = await db.agentSchedule.updateMany({ where: { id, nextRunAt: new Date(from) }, data: { nextRunAt: new Date(next) } });
       return count === 1;
+    },
+
+    async addLog({ args, ...entry }) {
+      try {
+        await db.agentLog.create({ data: { ...entry, args: args === undefined ? undefined : (args as Prisma.InputJsonValue) } });
+      } catch (e) {
+        // A call to an id that isn't an agent (typo, deleted) has nothing to log against.
+        if (!(e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2003")) throw e;
+      }
+    },
+    async listLogs(agentId, { callerId, limit }) {
+      const rows = await db.agentLog.findMany({ where: { agentId, ...(callerId ? { callerId } : {}) }, orderBy: { createdAt: "desc" }, take: limit });
+      return rows.map(toLog);
+    },
+    async pruneLogs(before) {
+      return (await db.agentLog.deleteMany({ where: { createdAt: { lt: new Date(before) } } })).count;
     },
 
     async createUser(handle) {

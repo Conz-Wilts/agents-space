@@ -145,6 +145,7 @@ const ALLOWED: Record<CallerAccess, Op[]> = {
   none: [],
   insert: ["insert"],
   own: ["insert", "read", "change"],
+  book: ["insert", "read", "change"],
   read: ["read"],
   write: ["insert", "read", "change"],
 };
@@ -154,6 +155,7 @@ export const accessLabel: Record<CallerAccess, string> = {
   none: "owner only",
   insert: "callers can add rows",
   own: "callers can add rows and see/change their own",
+  book: "callers can add rows, see every row (private columns only on their own) and change only their own",
   read: "callers can read every row",
   write: "callers can read and change every row",
 };
@@ -162,15 +164,33 @@ function check(t: DataTable, actor: Actor, op: Op) {
   if (actor.owner) return;
   if (!ALLOWED[t.callerAccess].includes(op)) throw new Error(`You can't ${op} rows in "${t.name}" (${accessLabel[t.callerAccess]}).`);
   if (t.callerAccess === "own" && op !== "insert" && !actor.userId) throw new Error(`Sign in to see or change your rows in "${t.name}".`);
+  if (t.callerAccess === "book" && op === "change" && !actor.userId) throw new Error(`Sign in to change your rows in "${t.name}".`);
 }
 
 /** Callers with `own` access only ever see or touch rows they added. */
 const ownOnly = (t: DataTable, actor: Actor) => !actor.owner && t.callerAccess === "own";
+/** On `book` tables callers see every row but change only their own. */
+const changeOwnOnly = (t: DataTable, actor: Actor) => ownOnly(t, actor) || (!actor.owner && t.callerAccess === "book");
 
 async function rowFor(agent: Agent, t: DataTable, actor: Actor, id: string) {
   const r = await store.getRow(agent.id, t.name, id);
-  if (!r || (ownOnly(t, actor) && r.createdBy !== actor.userId)) throw new Error(`No row "${id}" in ${t.name}.`);
+  const mine = !!actor.userId && r?.createdBy === actor.userId;
+  if (!r || (ownOnly(t, actor) && !mine)) throw new Error(`No row "${id}" in ${t.name}.`);
+  if (changeOwnOnly(t, actor) && !mine) throw new Error(`Row "${id}" in ${t.name} isn't yours; you can only change rows you added.`);
   return r;
+}
+
+/** Private columns of `t`. */
+const privateColumns = (t: DataTable) => t.columns.filter((c) => c.private).map((c) => c.name);
+
+/**
+ * A row's data as `actor` may see it: the owner and the row's author see everything; anyone else
+ * sees it without private columns (a taken slot, not who took it).
+ */
+export function visibleData(t: DataTable, r: TableRow, actor: Actor): Record<string, unknown> {
+  if (actor.owner || (!!actor.userId && r.createdBy === actor.userId)) return r.data;
+  const hidden = new Set(privateColumns(t));
+  return hidden.size ? Object.fromEntries(Object.entries(r.data).filter(([k]) => !hidden.has(k))) : r.data;
 }
 
 export async function insertRows(agent: Agent, table: string, actor: Actor, rows: Record<string, unknown>[]) {
@@ -192,6 +212,9 @@ export async function insertRows(agent: Agent, table: string, actor: Actor, rows
 export async function queryRows(agent: Agent, table: string, actor: Actor, q: Omit<RowQuery, "createdBy"> = {}) {
   const t = await getTable(agent, table);
   check(t, actor, "read");
+  // Filtering on a private column would tell a caller whose rows exist ("is Ana booked?").
+  const probed = actor.owner || ownOnly(t, actor) ? [] : Object.keys(q.where ?? {}).filter((k) => privateColumns(t).includes(k));
+  if (probed.length) throw new Error(`${probed.join(", ")} ${probed.length > 1 ? "are" : "is"} private in ${t.name}; filter by other columns.`);
   const limit = Math.min(Math.max(q.limit ?? 50, 1), MAX_QUERY);
   return store.queryRows(agent.id, t.name, { ...q, limit, createdBy: ownOnly(t, actor) ? actor.userId : undefined });
 }
@@ -214,13 +237,14 @@ export async function deleteRow(agent: Agent, table: string, actor: Actor, id: s
 
 /* ───────────── describing tables to an LLM ───────────── */
 
-const columnLine = (c: TableColumn) => `${c.name}${c.required ? "*" : ""}: ${c.type}${c.description ? ` (${c.description})` : ""}`;
+const columnLine = (c: TableColumn) => `${c.name}${c.required ? "*" : ""}: ${c.type}${c.private ? ", private" : ""}${c.description ? ` (${c.description})` : ""}`;
 
 export function describeTable(t: DataTable, opts: { owner?: boolean; rows?: number } = {}) {
   return [
     `### ${t.name}: ${t.title}${t.builtIn ? " (built in)" : ""}`,
     `Access: ${accessLabel[t.callerAccess]}${opts.rows !== undefined ? ` · ${opts.rows} row(s)` : ""}`,
     t.columns.length ? `Columns (* required): ${t.columns.map(columnLine).join("; ")}` : "Columns: any (free-form JSON object)",
+    privateColumns(t).length ? "Private columns are seen only by the owner and by whoever added the row; other callers get the row without them." : "",
     t.context,
   ]
     .filter(Boolean)
@@ -238,17 +262,20 @@ export async function tablesSkill(agent: Agent): Promise<string> {
   ].join("\n\n");
 }
 
-/** Rows as an LLM sees them: id, data fields, timestamps; the owner also sees who added each. */
-export async function viewRows(rows: TableRow[], actor: Actor) {
+/**
+ * Rows as an LLM sees them: id, the data fields `actor` may see (`visibleData`), timestamps; the
+ * owner also sees who added each, and other callers which rows are their own.
+ */
+export async function viewRows(t: DataTable, rows: TableRow[], actor: Actor) {
   const handles = new Map<string, string>();
   if (actor.owner)
     for (const id of new Set(rows.map((r) => r.createdBy).filter((x): x is string => !!x)))
       handles.set(id, `@${(await store.getUser(id))?.handle ?? "?"}`);
   return rows.map((r) => ({
     id: r.id,
-    ...r.data,
+    ...visibleData(t, r, actor),
     _created_at: r.createdAt,
     ...(r.updatedAt !== r.createdAt ? { _updated_at: r.updatedAt } : {}),
-    ...(actor.owner ? { _created_by: r.createdBy ? handles.get(r.createdBy) : "anonymous" } : {}),
+    ...(actor.owner ? { _created_by: r.createdBy ? handles.get(r.createdBy) : "anonymous" } : { _mine: !!actor.userId && r.createdBy === actor.userId }),
   }));
 }

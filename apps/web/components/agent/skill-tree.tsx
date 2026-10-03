@@ -6,7 +6,7 @@ type Leaf = { id: string; label: string; body?: string; panel?: ReactNode; alert
 
 /**
  * Bundle an agent's skill into a file tree: Instructions on top, then folders for context notes,
- * tables, tools, models and schedules. Notes whose titles contain "/" ("Menu/Drinks") nest into
+ * tables, tools, schedules, (scheduled agents, owner only) models and logs. Notes whose titles contain "/" ("Menu/Drinks") nest into
  * sub-folders; a lone note or tool still gets its folder so the shape stays predictable.
  */
 export function skillTree(s: {
@@ -19,7 +19,10 @@ export function skillTree(s: {
   tableRows?: (t: DataTable) => ReactNode;
   tools: Leaf[];
   schedules: Leaf[];
-  models: { current: { label: string; panel: ReactNode; alert?: boolean }; add?: ReactNode };
+  /** The model a scheduled agent runs on. Pass it only to the owner of a scheduled agent. */
+  models?: { current: { label: string; panel: ReactNode; alert?: boolean }; add?: ReactNode };
+  /** Call logs: for the owner every call (and one leaf per caller), for anyone else only their own. Signed-in viewers only. */
+  logs?: Leaf[];
 }): TreeNode[] {
   const tree: TreeNode[] = [{ id: "instructions", label: "Instructions", icon: "instructions", body: s.instructions }];
 
@@ -45,18 +48,22 @@ export function skillTree(s: {
         },
   );
 
-  tree.push({
-    id: "dir:models",
-    label: "Models",
-    open: s.models.current.alert,
-    children: [
-      { id: "model:current", icon: "model", ...s.models.current },
-      ...(s.models.add ? [{ id: "model:add", label: "Add a model", icon: "model" as const, panel: s.models.add }] : []),
-    ],
-  });
-
   if (s.schedules.length)
     tree.push({ id: "dir:schedules", label: "Schedules", children: s.schedules.map((x) => ({ ...x, id: `schedule:${x.id}`, icon: "clock" as const })) });
+
+  // Only scheduled runs use a model (skill agents reason on the caller's LLM), so the folder sits by Schedules.
+  if (s.models)
+    tree.push({
+      id: "dir:models",
+      label: "Models",
+      open: s.models.current.alert,
+      children: [
+        { id: "model:current", icon: "model", ...s.models.current },
+        ...(s.models.add ? [{ id: "model:add", label: "Add a model", icon: "model" as const, panel: s.models.add }] : []),
+      ],
+    });
+
+  if (s.logs?.length) tree.push({ id: "dir:logs", label: "Logs", children: s.logs.map((x) => ({ ...x, id: `log:${x.id}`, icon: "log" as const })) });
 
   return tree;
 }
@@ -69,7 +76,7 @@ export function lockedTree(panel: ReactNode): TreeNode[] {
   const body = "You don't have access to this agent yet, so its files stay locked. Ask the owner below.";
   return [
     { id: "lock:instructions", label: "Instructions", icon: "instructions", locked: true, body, panel },
-    ...["Context", "Tables", "Tools"].map((label) => ({ id: `lock:${label.toLowerCase()}`, label, folder: true, locked: true, body, panel })),
+    ...["Context", "Tables", "Tools", "Logs"].map((label) => ({ id: `lock:${label.toLowerCase()}`, label, folder: true, locked: true, body, panel })),
   ];
 }
 
@@ -100,13 +107,14 @@ const access: Record<DataTable["callerAccess"], string> = {
   none: "Owner only",
   insert: "Callers can add rows",
   own: "Callers add rows and see or change their own",
+  book: "Callers add rows and see every row, but change only their own; private columns show only on their own rows",
   read: "Callers can read every row",
   write: "Callers can read and change every row",
 };
 
 function tableDoc(t: DataTable) {
   const cols = t.columns.length
-    ? ["| Column | Type | Required | What goes here |", "|---|---|---|---|", ...t.columns.map((c) => `| \`${c.name}\` | ${c.type} | ${c.required ? "yes" : ""} | ${c.description.replace(/\|/g, "\\|")} |`)].join("\n")
+    ? ["| Column | Type | Required | What goes here |", "|---|---|---|---|", ...t.columns.map((c) => `| \`${c.name}\` | ${c.type}${c.private ? " (private)" : ""} | ${c.required ? "yes" : ""} | ${c.description.replace(/\|/g, "\\|")} |`)].join("\n")
     : "Free-form: any JSON object per row.";
   return [`**${t.title}**${t.builtIn ? " (built in)" : ""} · ${access[t.callerAccess]}`, t.context, cols].filter(Boolean).join("\n\n");
 }

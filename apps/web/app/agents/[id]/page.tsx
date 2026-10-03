@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { agentTables, describeSchedule, missingSecrets, modelProblem, store } from "@agents-space/core";
+import { agentLogs, agentTables, describeSchedule, missingSecrets, modelProblem, store } from "@agents-space/core";
 import { getSessionUser } from "@/lib/supabase/server";
 import { AgentDocs } from "@/components/agent/agent-docs";
 import { lockedTree, skillTree } from "@/components/agent/skill-tree";
 import { TableRows } from "@/components/agent/table-rows";
+import { AgentLogs } from "@/components/agent/agent-logs";
 import { AddModelPanel, ModelPanel } from "@/components/models/model-panel";
 import { OwnerControls } from "@/components/agent/owner-controls";
 import { RequestAccess } from "@/components/agent/request-access";
@@ -29,7 +30,9 @@ export default async function AgentPage({ params }: PageProps<"/agents/[id]">) {
 
   // Instructions, notes and tools are the agent's skill: only for people who may use it.
   const access = agent.kind === "hosted" && (await store.hasAccess(agent.id, user?.id));
-  const currentModel = access && agent.model ? await store.getModel(agent.model) : undefined;
+  // Only scheduled runs use the agent's model, so only their owner sees it.
+  const runsOwnModel = isOwner && agent.mode === "scheduled";
+  const currentModel = runsOwnModel && agent.model ? await store.getModel(agent.model) : undefined;
   const [notes, connectors, tables, schedules] = access
     ? await Promise.all([
         store.listNotes(agent.id),
@@ -38,6 +41,25 @@ export default async function AgentPage({ params }: PageProps<"/agents/[id]">) {
         isOwner ? store.listSchedules(agent.id) : [],
       ])
     : [[], [], [], []];
+  // Logs: the owner sees every call (plus a leaf per recent caller), anyone else only their own.
+  const logCallers =
+    access && isOwner
+      ? await Promise.all(
+          [...new Set((await agentLogs(agent, user.id)).map((l) => l.callerId).filter((x): x is string => !!x))].map(async (id) => ({
+            id,
+            handle: (await store.getUser(id))?.handle ?? "?",
+          })),
+        )
+      : [];
+  const logs =
+    access && user
+      ? isOwner
+        ? [
+            { id: "all", label: "All calls", body: "Every call to this agent, from everyone. Each caller sees only their own calls.", panel: <AgentLogs agent={agent} viewerId={user.id} /> },
+            ...logCallers.map((c) => ({ id: `caller:${c.id}`, label: `@${c.handle}`, body: `Calls by @${c.handle}.`, panel: <AgentLogs agent={agent} viewerId={user.id} caller={c.id} /> })),
+          ]
+        : [{ id: "mine", label: "Your calls", body: "Your calls to this agent. Only you and the owner see them.", panel: <AgentLogs agent={agent} viewerId={user.id} /> }]
+      : undefined;
   // Latest request by this viewer, for the request-access button on agents that need approval.
   const myRequest =
     !access && user && agent.kind === "hosted"
@@ -123,10 +145,13 @@ export default async function AgentPage({ params }: PageProps<"/agents/[id]">) {
                     </p>
                   ),
                 })),
-                models: {
-                  current: { label: currentModel?.title ?? "Default model", alert: isOwner && !!currentModel && !!modelProblem(currentModel), panel: <ModelPanel agent={agent} owner={isOwner} /> },
-                  add: isOwner ? <AddModelPanel agentId={agent.id} /> : undefined,
-                },
+                models: runsOwnModel
+                  ? {
+                      current: { label: currentModel?.title ?? "Default model", alert: !!currentModel && !!modelProblem(currentModel), panel: <ModelPanel agent={agent} owner /> },
+                      add: <AddModelPanel agentId={agent.id} />,
+                    }
+                  : undefined,
+                logs,
               })}
             />
           </div>

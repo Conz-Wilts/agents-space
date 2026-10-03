@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-export type NodeIcon = "file" | "folder" | "instructions" | "note" | "table" | "plug" | "model" | "clock" | "lock";
+export type NodeIcon = "file" | "folder" | "instructions" | "note" | "table" | "plug" | "model" | "clock" | "lock" | "log";
 
 /**
  * One entry in the skill tree. A leaf shows a markdown `body`, a server-rendered `panel`, or both (panel below);
@@ -321,6 +321,8 @@ function Icon({ kind }: { kind: NodeIcon | "folder-open" }) {
       return svg(<path d="M3.75 7.25h8.5v6.5h-8.5zM5.5 7.25V5a2.5 2.5 0 0 1 5 0v2.25" />);
     case "clock":
       return svg(<path d="M8 14.25A6.25 6.25 0 1 0 8 1.75a6.25 6.25 0 0 0 0 12.5zM8 4.5V8l2.5 1.5" />);
+    case "log":
+      return svg(<path d="M2.5 3.5h1M2.5 8h1M2.5 12.5h1M6 3.5h7.5M6 8h7.5M6 12.5h5" />);
     case "note":
     case "file":
     default:

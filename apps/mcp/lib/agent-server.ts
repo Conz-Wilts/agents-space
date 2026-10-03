@@ -1,9 +1,10 @@
 import { createMcpHandler } from "mcp-handler";
 import { z } from "zod";
-import { store, actionInputSchema, checkPayment, loadSkill, money, payablePrices, paymentLine, priceLine, requestPayment, runAgentAction, scopedActions } from "@agents-space/core";
+import { store, LOG_RETENTION_DAYS, MAX_LOGS, actionInputSchema, checkPayment, loadSkill, money, payablePrices, paymentLine, priceLine, requestPayment, runAgentAction, scopedActions } from "@agents-space/core";
 import { currentUser, metadataPathFor, oauthEnabled, requireUser, withAuth } from "@/lib/auth";
 import { reachable } from "@/lib/access";
 import { origin, safe, text } from "@/lib/format";
+import { logged, logsText } from "@/lib/logged";
 import { registerRowTools } from "@/lib/table-tools";
 
 /**
@@ -46,10 +47,20 @@ async function serve(req: Request, id: string) {
       server.registerTool(
         "instructions",
         { title: "How this agent works", description: `Read first: ${agent.name}'s instructions and context.`, inputSchema: z.object({}) },
-        async () => text(skill),
+        logged("instructions", () => agent.id, async () => text(skill)),
       );
 
       registerRowTools(server, agent.id);
+
+      server.registerTool(
+        "agent_logs",
+        {
+          title: "Call log",
+          description: `Recent calls to ${agent.name}, newest first: your own calls (the owner sees everyone's, last ${LOG_RETENTION_DAYS} days).`,
+          inputSchema: z.object({ limit: z.number().int().min(1).max(MAX_LOGS).default(25) }),
+        },
+        safe(async ({ limit }, c) => text(await logsText(agent, c.http?.authInfo?.clientId, { limit }))),
+      );
 
       for (const a of actions)
         server.registerTool(
@@ -59,7 +70,7 @@ async function serve(req: Request, id: string) {
             description: a.description,
             inputSchema: actionInputSchema(a.params),
           },
-          safe(async (args: Record<string, unknown>, c) => {
+          logged(`${a.connector}__${a.action}`, () => agent.id, async (args: Record<string, unknown>, c) => {
             // Re-check: access may have been revoked since this server was built.
             if (!(await store.hasAccess(agent.id, (await currentUser(c))?.id))) throw new Error("Access revoked.");
             return text(JSON.stringify(await runAgentAction(agent, a.connector, a.action, args), null, 2).slice(0, 20000));
@@ -77,7 +88,7 @@ async function serve(req: Request, id: string) {
               note: z.string().default("").describe("What it's for, shown on the checkout page, e.g. 'Cleaning, Tue Oct 7 10:00, for Ana Ruiz'"),
             }),
           },
-          safe(async ({ price, note }, c) => {
+          logged("request_payment", () => agent.id, async ({ price, note }: { price: string; note: string }, c) => {
             const user = await currentUser(c);
             if (!(await store.hasAccess(agent.id, user?.id))) throw new Error("Access revoked.");
             const p = await requestPayment(agent, price, { payer: user, note, successUrl: `${base}/payments?status=paid`, cancelUrl: `${base}/payments?status=cancelled` });
@@ -87,7 +98,7 @@ async function serve(req: Request, id: string) {
         server.registerTool(
           "check_payment",
           { title: "Check a payment", description: "Whether a payment link was paid (open, paid or expired).", inputSchema: z.object({ payment_id: z.string() }) },
-          safe(async ({ payment_id }, c) => text(paymentLine(await checkPayment(payment_id.trim(), await currentUser(c))))),
+          logged("check_payment", () => agent.id, async ({ payment_id }: { payment_id: string }, c) => text(paymentLine(await checkPayment(payment_id.trim(), await currentUser(c))))),
         );
       }
     },

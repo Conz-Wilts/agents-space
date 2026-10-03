@@ -108,15 +108,22 @@ export const TableColumnSchema = z.object({
   type: z.enum(["text", "number", "boolean", "date", "datetime", "json"]).default("text"),
   description: z.string().default(""),
   required: z.boolean().default(false),
+  /**
+   * Personal details (name, phone, notes): only the owner and whoever added the row see the value.
+   * Other callers see the row with this column left out, e.g. a booked time slot but not who booked it.
+   */
+  private: z.boolean().optional(),
 });
 export type TableColumn = z.infer<typeof TableColumnSchema>;
 
 /**
  * What callers of an agent (not its owner) may do with a table's rows.
  * `none` owner only · `insert` add rows · `own` add rows and read/change/delete their own ·
+ * `book` add rows, read all rows, change/delete only their own (reservations: everyone sees which
+ * slots are taken; private columns stay hidden on other people's rows) ·
  * `read` read all rows · `write` read and change all rows.
  */
-export const CallerAccessSchema = z.enum(["none", "insert", "own", "read", "write"]);
+export const CallerAccessSchema = z.enum(["none", "insert", "own", "book", "read", "write"]);
 export type CallerAccess = z.infer<typeof CallerAccessSchema>;
 
 /** A data table an agent keeps, e.g. reservations or leads. Every hosted agent has `outputs`. */
@@ -187,6 +194,24 @@ export const AgentScheduleSchema = z.object({
   createdAt: z.string(),
 });
 export type AgentSchedule = z.infer<typeof AgentScheduleSchema>;
+
+/** One call to a hosted agent: a tool on its MCP server, or a scheduled run. See `logs.ts`. */
+export const AgentLogSchema = z.object({
+  id: z.string(),
+  agentId: z.string(),
+  /** Who made the call; unset = anonymous (public agents). */
+  callerId: z.string().optional(),
+  /** Tool name, e.g. "insert_rows", "gmail__send_email", "scheduled run". */
+  tool: z.string(),
+  /** The call's inputs, trimmed. */
+  args: z.unknown().optional(),
+  ok: z.boolean(),
+  /** Start of the reply or error, trimmed. */
+  result: z.string().default(""),
+  durationMs: z.number().int().default(0),
+  createdAt: z.string(),
+});
+export type AgentLog = z.infer<typeof AgentLogSchema>;
 
 export const ActionParamSchema = z.object({
   type: z.enum(["string", "number", "boolean", "object", "array"]).default("string"),

@@ -6,6 +6,7 @@ export * from "./agents";
 export * from "./spaces";
 export * from "./tables";
 export * from "./schedules";
+export * from "./logs";
 export * from "./models";
 export * from "./payments";
 export * from "./composio";

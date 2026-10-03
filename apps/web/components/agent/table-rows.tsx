@@ -1,9 +1,10 @@
-import { actorFor, MAX_QUERY, queryRows, store, type Agent, type DataTable, type TableRow } from "@agents-space/core";
+import { actorFor, MAX_QUERY, queryRows, store, visibleData, type Agent, type DataTable, type TableRow } from "@agents-space/core";
 
 /**
  * The rows in one agent table, newest first, under the table's schema in the skill tree. Uses the
  * same access rules as the MCP table tools: the owner sees everything, callers see what the
- * table's `callerAccess` lets them (only their own rows on `own` tables, nothing on `insert`/`none`).
+ * table's `callerAccess` lets them (only their own rows on `own` tables, nothing on `insert`/`none`),
+ * and private columns only on the owner's view and the viewer's own rows (`visibleData`).
  */
 export async function TableRows({ agent, table, userId }: { agent: Agent; table: DataTable; userId?: string }) {
   const actor = actorFor(agent, userId);
@@ -21,8 +22,10 @@ export async function TableRows({ agent, table, userId }: { agent: Agent; table:
   const handles = actor.owner ? await creators(rows) : new Map<string, string>();
 
   // Declared columns first, then any extra keys (free-form tables, or columns since removed).
-  const keys = [...new Set([...table.columns.map((c) => c.name), ...rows.flatMap((r) => Object.keys(r.data))])];
-  const title = actor.owner ? `Rows · ${total}` : `Your rows · ${total}`;
+  const shown = rows.map((r) => ({ ...r, data: visibleData(table, r, actor) }));
+  // Private columns stay as headers ("—" on other people's rows) so the viewer knows they exist.
+  const keys = [...new Set([...table.columns.map((c) => c.name), ...shown.flatMap((r) => Object.keys(r.data))])];
+  const title = actor.owner || table.callerAccess !== "own" ? `Rows · ${total}` : `Your rows · ${total}`;
 
   if (!rows.length)
     return (
@@ -45,7 +48,7 @@ export async function TableRows({ agent, table, userId }: { agent: Agent; table:
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
+            {shown.map((r) => (
               <tr key={r.id} className="border-b border-edge last:border-0 hover:bg-panel/60">
                 {keys.map((k) => (
                   <td key={k} className="max-w-[320px] px-3 py-2 align-top">
@@ -65,7 +68,7 @@ export async function TableRows({ agent, table, userId }: { agent: Agent; table:
   );
 }
 
-function Section({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
+export function Section({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
   return (
     <div className="mt-8 border-t border-edge pt-6">
       <div className="mb-3 flex items-baseline justify-between gap-4">
@@ -85,7 +88,7 @@ function Cell({ value }: { value: unknown }) {
   return <span className="break-words">{String(value)}</span>;
 }
 
-const when = (iso: string) => new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "UTC" }) + " UTC";
+export const when = (iso: string) => new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "UTC" }) + " UTC";
 
 async function creators(rows: TableRow[]) {
   const ids = [...new Set(rows.map((r) => r.createdBy).filter((x): x is string => !!x))];

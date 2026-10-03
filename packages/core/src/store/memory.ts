@@ -1,5 +1,5 @@
 import { matchAgents } from "../match";
-import { AgentSchema, type Agent, type AccessRequest, type AgentSchedule, type Bottleneck, type Connector, type ContextNote, type DataTable, type DeviceLogin, type Model, type Payment, type Price, type TableRow, type User } from "../schema";
+import { AgentSchema, type Agent, type AccessRequest, type AgentLog, type AgentSchedule, type Bottleneck, type Connector, type ContextNote, type DataTable, type DeviceLogin, type Model, type Payment, type Price, type TableRow, type User } from "../schema";
 import type { Store } from "./index";
 import { DEVICE_LOGIN_TTL_MS, RESERVED_HANDLES, handleCandidates, hashKey, newApiKey, newDeviceCode, newUserCode, normalizeHandle, normalizeUserCode, SPACE_CATEGORY, slug, spaceStatus, infoGate, useGate, passes } from "./util";
 
@@ -13,6 +13,7 @@ export function createMemoryStore(): Store {
   const tables: DataTable[] = [];
   const rows: TableRow[] = [];
   const schedules: AgentSchedule[] = [];
+  const logs: AgentLog[] = [];
   const rowsOf = (agentId: string, table: string) => rows.filter((r) => r.agentId === agentId && r.table === table);
   const users: User[] = [];
   const connectors: Connector[] = [];
@@ -174,6 +175,24 @@ export function createMemoryStore(): Store {
       if (!sc || sc.nextRunAt !== from) return false;
       sc.nextRunAt = next;
       return true;
+    },
+
+    async addLog(entry) {
+      if (!agents.some((a) => a.id === entry.agentId)) return;
+      logs.push({ ...entry, id: crypto.randomUUID(), createdAt: now() });
+    },
+    async listLogs(agentId, { callerId, limit }) {
+      return logs
+        .filter((l) => l.agentId === agentId && (!callerId || l.callerId === callerId))
+        .reverse()
+        .slice(0, limit)
+        .map((l) => ({ ...l }));
+    },
+    async pruneLogs(before) {
+      const keep = logs.filter((l) => l.createdAt >= before);
+      const n = logs.length - keep.length;
+      logs.splice(0, logs.length, ...keep);
+      return n;
     },
 
     async createUser(handle) {

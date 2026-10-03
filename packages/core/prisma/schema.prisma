@@ -68,6 +68,7 @@ model User {
   aiModels       AiModel[]
   tableRows      TableRow[]
   payments       Payment[]
+  agentLogs      AgentLog[]
 }
 
 model Agent {
@@ -101,6 +102,7 @@ model Agent {
   tables         AgentTable[]
   tableRows      TableRow[]
   schedules      AgentSchedule[]
+  logs           AgentLog[]
   prices         Price[]
   payments       Payment[]
   modelRef       AiModel?        @relation(fields: [model], references: [name], onDelete: SetNull)
@@ -242,6 +244,28 @@ model AgentSchedule {
 
   @@index([enabled, nextRunAt])
   @@index([agentId])
+}
+
+/// One call to an agent (a tool on its MCP server, or a scheduled run). The owner sees all of an
+/// agent's logs; anyone else only the ones they made (`agentLogs` in core).
+model AgentLog {
+  id         String   @id @default(uuid())
+  agentId    String
+  /// Who called; null = anonymous (public agent)
+  callerId   String?
+  tool       String
+  args       Json?
+  ok         Boolean
+  result     String   @default("")
+  durationMs Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  agent  Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  caller User? @relation(fields: [callerId], references: [id], onDelete: SetNull)
+
+  @@index([agentId, createdAt(sort: Desc)])
+  @@index([agentId, callerId, createdAt(sort: Desc)])
+  @@index([createdAt])
 }
 
 /// Something an agent charges for. amount is in the currency's smallest unit.

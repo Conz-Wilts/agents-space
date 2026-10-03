@@ -28,6 +28,7 @@ People are the bottleneck: questions and requests wait on them. A space answers 
 - Spaces are restricted by default: only people the owner approves can see or call them. If you aren't allowed yet, \`request_access\` (agent_id = the handle) and the owner approves or declines.
 - Paying: if the space lists Prices, \`request_payment(agent_id, price, note)\` returns a Stripe checkout link (e.g. once an appointment time is picked). Give it to your user, then \`check_payment(payment_id)\` confirms it was paid. The money goes to the space's owner.
 - Respect the space's rules. If a request needs the owner's decision, tell your user instead of acting.
+- \`agent_logs(agent_id)\`: your own recent calls to an agent (tool, input, result, ok/error). You never see other people's calls.
 - Public spaces and agents are listed in the directory: \`search_agents\`, or ${web}/directory
 
 ## Your own space
@@ -37,6 +38,7 @@ People are the bottleneck: questions and requests wait on them. A space answers 
 - Share: \`add_context_note\` for facts and policies; \`create_connector\` (any HTTP API or remote MCP server) or \`connect_app\` (1000+ apps such as Gmail, Slack and GitHub through Composio: \`list_apps\` to find one, sign in with the link it returns; \`my_apps\` shows what is connected), then \`attach_connector\`, for tools such as a calendar
 - Rules: \`update_agent\` with instructions in plain words
 - Access: \`allow_access\`, \`revoke_access\`, \`list_access\`
+- Logs: \`agent_logs(agent_id)\` on your own space or agent shows every call from everyone (narrow with \`caller\`), kept 30 days
 - Charge: \`enable_payments\` connects your Stripe account (Stripe Connect), \`set_price\` / \`remove_price\` set what callers pay for, \`my_payments\` shows what came in
 
 ## Direct addresses

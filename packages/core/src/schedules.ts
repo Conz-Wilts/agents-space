@@ -4,6 +4,7 @@ import { z } from "zod";
 import { store } from "./store";
 import { actionInputSchema, loadSkill, runAgentAction, scopedActions } from "./agents";
 import { agentLanguageModel } from "./models";
+import { recordCall } from "./logs";
 import { OUTPUTS_TABLE, actorFor, agentTables, deleteRow, insertRows, queryRows, updateRow } from "./tables";
 import type { Agent, AgentSchedule } from "./schema";
 
@@ -149,6 +150,8 @@ export async function runSchedule(s: AgentSchedule, opts: { model?: LanguageMode
   }
 
   await store.updateSchedule(s.id, { lastRunAt: startedAt.toISOString(), lastStatus: out.status, lastResult: out.result.slice(0, 8000) });
+  if (agent)
+    await recordCall({ agentId: agent.id, callerId: agent.ownerId, tool: "scheduled run", args: { task: s.task }, ok: out.status === "ok", result: out.result, durationMs: Date.now() - startedAt.getTime() });
   if (agent?.ownerId)
     try {
       await insertRows(agent, OUTPUTS_TABLE, actorFor(agent, agent.ownerId), [

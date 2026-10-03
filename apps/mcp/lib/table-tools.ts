@@ -6,6 +6,7 @@ import {
   agentTables,
   deleteRow,
   describeTable,
+  getTable,
   insertRows,
   queryRows,
   updateRow,
@@ -14,7 +15,8 @@ import {
   MAX_QUERY,
 } from "@agents-space/core";
 import { currentUser } from "@/lib/auth";
-import { safe, text } from "@/lib/format";
+import { text } from "@/lib/format";
+import { logged } from "@/lib/logged";
 
 type Server = Parameters<Parameters<typeof createMcpHandler>[0]>[0];
 type Ctx = Parameters<typeof currentUser>[0];
@@ -47,7 +49,7 @@ export function registerRowTools(server: Server, agentId?: string) {
       description: "The agent's data tables: columns, what each is for, and what you may do with it. Every agent has a built-in 'outputs' table.",
       inputSchema: z.object(idShape),
     },
-    safe(async (args: { agent_id?: string }, ctx) => {
+    logged("list_tables", idOf, async (args: { agent_id?: string }, ctx) => {
       const { agent, actor } = await resolve(idOf(args), ctx);
       const tables = (await agentTables(agent)).filter((t) => actor.owner || t.callerAccess !== "none");
       const parts = await Promise.all(
@@ -68,10 +70,10 @@ export function registerRowTools(server: Server, agentId?: string) {
         rows: z.array(z.record(z.string(), z.unknown())).min(1).max(MAX_INSERT).describe("Objects keyed by column name"),
       }),
     },
-    safe(async (args: { agent_id?: string; table: string; rows: Record<string, unknown>[] }, ctx) => {
+    logged("insert_rows", idOf, async (args: { agent_id?: string; table: string; rows: Record<string, unknown>[] }, ctx) => {
       const { agent, actor } = await resolve(idOf(args), ctx);
       const rows = await insertRows(agent, args.table, actor, args.rows);
-      return json({ inserted: rows.length, rows: await viewRows(rows, actor) });
+      return json({ inserted: rows.length, rows: await viewRows(await getTable(agent, args.table), rows, actor) });
     }),
   );
 
@@ -89,10 +91,10 @@ export function registerRowTools(server: Server, agentId?: string) {
         order: z.enum(["desc", "asc"]).default("desc").describe("By creation time"),
       }),
     },
-    safe(async (args: { agent_id?: string; table: string; where: Record<string, unknown>; limit: number; offset: number; order: "asc" | "desc" }, ctx) => {
+    logged("query_rows", idOf, async (args: { agent_id?: string; table: string; where: Record<string, unknown>; limit: number; offset: number; order: "asc" | "desc" }, ctx) => {
       const { agent, actor } = await resolve(idOf(args), ctx);
       const rows = await queryRows(agent, args.table, actor, args);
-      return json({ count: rows.length, rows: await viewRows(rows, actor) });
+      return json({ count: rows.length, rows: await viewRows(await getTable(agent, args.table), rows, actor) });
     }),
   );
 
@@ -103,10 +105,10 @@ export function registerRowTools(server: Server, agentId?: string) {
       description: "Change fields of one row by id. Only the fields you pass change; null clears a field.",
       inputSchema: z.object({ ...idShape, table, row_id: z.string(), values: z.record(z.string(), z.unknown()) }),
     },
-    safe(async (args: { agent_id?: string; table: string; row_id: string; values: Record<string, unknown> }, ctx) => {
+    logged("update_row", idOf, async (args: { agent_id?: string; table: string; row_id: string; values: Record<string, unknown> }, ctx) => {
       const { agent, actor } = await resolve(idOf(args), ctx);
       const row = await updateRow(agent, args.table, actor, args.row_id, args.values);
-      return json((await viewRows([row], actor))[0]);
+      return json((await viewRows(await getTable(agent, args.table), [row], actor))[0]);
     }),
   );
 
@@ -117,7 +119,7 @@ export function registerRowTools(server: Server, agentId?: string) {
       description: "Delete one row by id.",
       inputSchema: z.object({ ...idShape, table, row_id: z.string() }),
     },
-    safe(async (args: { agent_id?: string; table: string; row_id: string }, ctx) => {
+    logged("delete_row", idOf, async (args: { agent_id?: string; table: string; row_id: string }, ctx) => {
       const { agent, actor } = await resolve(idOf(args), ctx);
       await deleteRow(agent, args.table, actor, args.row_id);
       return text(`Deleted ${args.row_id} from ${args.table}.`);

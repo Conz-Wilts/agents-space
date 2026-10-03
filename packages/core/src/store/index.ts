@@ -1,6 +1,7 @@
 import type {
   AccessRequest,
   Agent,
+  AgentLog,
   AgentSchedule,
   Bottleneck,
   Connector,
@@ -71,6 +72,13 @@ export interface Store {
   dueSchedules(now: string, limit: number): Promise<AgentSchedule[]>;
   /** Moves `nextRunAt` on only if it is still `from`: true for exactly one concurrent caller. */
   claimSchedule(id: string, from: string, next: string): Promise<boolean>;
+
+  /** Ignores ids that aren't an agent. */
+  addLog(entry: Omit<AgentLog, "id" | "createdAt">): Promise<void>;
+  /** Newest first. `callerId` narrows to one caller; access rules live in `agentLogs` (logs.ts), not here. */
+  listLogs(agentId: string, opts: { callerId?: string; limit: number }): Promise<AgentLog[]>;
+  /** Delete logs older than `before` (ISO). Returns how many went. */
+  pruneLogs(before: string): Promise<number>;
 
   /** Returns the API key once; only its hash is kept. */
   createUser(handle: string): Promise<{ user: User; apiKey: string }>;
