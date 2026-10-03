@@ -19,7 +19,8 @@ _Last updated: 2026-10-03_
 
 ## Next
 - [ ] Create the Supabase project, set `DATABASE_URL` / `DIRECT_URL` / `CONNECTOR_SECRETS_KEY` (local + Vercel), `pnpm db:push && pnpm db:seed` — switch to `db:migrate` migrations before real users
-- [ ] Deploy `apps/mcp` and `apps/web` as two Vercel projects; set `PUBLIC_MCP_ORIGIN`, `NEXT_PUBLIC_MCP_URL`
+- [x] `apps/web` deployed: Vercel project `agents-space` (team SUPAYAPPERS, root dir `apps/web`) → https://agents-space-liard.vercel.app (CLI deploy, no git integration yet)
+- [ ] Deploy `apps/mcp` as its own Vercel project; set `PUBLIC_MCP_ORIGIN`, `NEXT_PUBLIC_MCP_URL`
 - [ ] Web: agent detail pages, visibility badges, "request access" button
 - [ ] OAuth instead of API keys; rate limiting on writes
 - [ ] Embedding-based matching

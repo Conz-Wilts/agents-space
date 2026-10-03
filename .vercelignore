@@ -1,0 +1,9 @@
+# Never upload local env files (VERCEL_TOKEN, DB creds). Set env vars with `vercel env` instead.
+.env
+.env.*
+!.env.example
+node_modules
+**/node_modules
+**/.next
+**/.turbo
+.vercel
