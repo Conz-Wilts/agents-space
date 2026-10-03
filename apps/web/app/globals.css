@@ -117,39 +117,43 @@ body {
   50% { opacity: 1; }
 }
 
-[data-animate]:not([data-in]) :is(.r, .r-pop, .r-fade, .r-mask > *, .r-slide, .r-type, .r-draw) {
+[data-animate]:not([data-in]) :is(.r, .r-pop, .r-fade, .r-mask > *, .r-slide, .r-type, .r-draw, .r-grow, .r-progress) {
   opacity: 0;
 }
-[data-in] .r { animation: rise 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) var(--d, 0ms) both; }
-[data-in] .r-pop { animation: pop 0.5s cubic-bezier(0.3, 1.4, 0.5, 1) var(--d, 0ms) both; }
-[data-in] .r-slide { animation: slide-in-right 1s cubic-bezier(0.2, 0.8, 0.2, 1) var(--d, 0ms) both; }
-[data-in] .r-fade { animation: fade 0.8s ease var(--d, 0ms) both; }
+[data-in] .r { animation: rise 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) var(--d, 0ms) backwards; }
+[data-in] .r-pop { animation: pop 0.5s cubic-bezier(0.3, 1.4, 0.5, 1) var(--d, 0ms) backwards; }
+[data-in] .r-slide { animation: slide-in-right 1s cubic-bezier(0.2, 0.8, 0.2, 1) var(--d, 0ms) backwards; }
+[data-in] .r-fade { animation: fade 0.8s ease var(--d, 0ms) backwards; }
 
 /* Line-by-line masked headline */
 .r-mask > * { display: block; overflow: hidden; padding-bottom: 0.08em; margin-bottom: -0.08em; }
 .r-mask > * > span { display: inline-block; }
-[data-in] .r-mask > * > span { animation: rise-mask 1s cubic-bezier(0.2, 0.8, 0.2, 1) var(--d, 0ms) both; }
+[data-in] .r-mask > * > span { animation: rise-mask 1s cubic-bezier(0.2, 0.8, 0.2, 1) var(--d, 0ms) backwards; }
 [data-in] .r-mask > *:nth-child(2) > span { animation-delay: calc(var(--d, 0ms) + 110ms); }
 [data-in] .r-mask > *:nth-child(3) > span { animation-delay: calc(var(--d, 0ms) + 220ms); }
 
 /* Typewriter: element sets --n (chars) */
 .r-type { display: inline-block; overflow: hidden; white-space: nowrap; vertical-align: bottom; width: calc(var(--n) * 1ch); }
-[data-in] .r-type { animation: type calc(var(--n) * 70ms) steps(var(--n)) var(--d, 0ms) both; }
+[data-in] .r-type { animation: type calc(var(--n) * 70ms) steps(var(--n)) var(--d, 0ms) backwards; }
 .caret { animation: blink 1s steps(1) infinite; }
 
-/* SVG line drawing: paths use pathLength="1" */
-.r-draw { stroke-dasharray: 1; stroke-dashoffset: 1; }
+/* SVG line drawing: each path sets --len to (at least) its length */
+.r-draw { stroke-dasharray: var(--len); stroke-dashoffset: var(--len); }
 [data-in] .r-draw { opacity: 1; animation: draw 0.9s cubic-bezier(0.6, 0, 0.2, 1) var(--d, 0ms) forwards; }
 
 /* Packets flowing along the network paths (HTML elements on CSS motion paths) */
 .packet { offset-rotate: 0deg; opacity: 0; }
 [data-in] .packet { animation: travel 4.8s cubic-bezier(0.5, 0, 0.3, 1) var(--d, 0ms) infinite; }
 
-.ripple { position: absolute; left: 50%; top: 50%; border-radius: 9999px; border: 1px solid #ffffff59; }
+.ripple { opacity: 0; pointer-events: none; position: absolute; left: 50%; top: 50%; border-radius: 9999px; border: 1px solid #ffffff59; }
 [data-in] .ripple { animation: ripple 3.6s cubic-bezier(0.2, 0.6, 0.3, 1) var(--d, 0ms) infinite; }
 [data-in] .breathe { animation: breathe 4.8s ease-in-out 1.6s infinite; }
 .ping { position: relative; }
 .ping::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: inherit; animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite; }
+.hub-mark { display: inline-flex; animation: spin 16s linear infinite; }
+.ripple-ink { border-color: #0a0a0a12; }
+@keyframes nudge { 0%, 70%, 100% { transform: translate(0, 0); } 80% { transform: translate(3px, 2px); } 90% { transform: translate(0, 0); } }
+.nudge { animation: nudge 3s ease-in-out infinite; }
 .float { animation: float 6s ease-in-out infinite; }
 .spin-slow { animation: spin 4s linear infinite; transform-origin: 50% 50%; transform-box: fill-box; }
 .wait-pulse { animation: wait-pulse 1.8s ease-in-out infinite; }
@@ -157,6 +161,46 @@ body {
 .shimmer {
   background: linear-gradient(90deg, transparent 0%, #0000000d 50%, transparent 100%) 0 0 / 200% 100%;
   animation: shimmer 1.4s linear infinite;
+}
+
+
+/* Hero transcript & task-log details */
+@keyframes grow-y { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes grow-x { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes vanish { to { opacity: 0; width: 0; margin-right: -8px; border-width: 0; } }
+@keyframes fade-out { to { opacity: 0; visibility: hidden; } }
+@keyframes bounce-dot {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+@keyframes wait-glow {
+  0%, 100% { box-shadow: inset 2px 0 0 #0a0a0a00; background-color: #0a0a0a00; }
+  50% { box-shadow: inset 2px 0 0 #0a0a0a; background-color: #0a0a0a08; }
+}
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(5px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(2px); }
+}
+
+[data-in] .r-grow { animation: grow-y 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) var(--d, 0ms) backwards; }
+[data-in] .r-progress { animation: grow-x 2.2s cubic-bezier(0.4, 0, 0.2, 1) var(--d, 0ms) backwards; }
+.typing > span { animation: bounce-dot 0.9s ease-in-out infinite; }
+[data-in] .typing { animation: fade-out 0.2s ease calc(var(--d, 0ms) + 850ms) forwards; }
+[data-in] .spinner {
+  animation: spin 0.7s linear infinite, vanish 0.3s ease calc(var(--d, 0ms) + 900ms) forwards;
+}
+.scan { background: linear-gradient(90deg, transparent, #0a0a0a0f, transparent) 0 0 / 50% 100% no-repeat; }
+[data-in] .scan {
+  animation: scan-x 0.9s linear var(--d, 0ms) infinite, fade-out 0.2s ease calc(var(--d, 0ms) + 900ms) forwards;
+}
+@keyframes scan-x { from { background-position: -100% 0; } to { background-position: 200% 0; } }
+.spin-hand { animation: spin 3s linear infinite; }
+[data-in] .waiting-row { animation: rise 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) var(--d, 0ms) backwards, wait-glow 2.4s ease-in-out calc(var(--d, 0ms) + 900ms) infinite; }
+[data-in] .r-mask .stuck {
+  animation: rise-mask 1s cubic-bezier(0.2, 0.8, 0.2, 1) calc(var(--d, 0ms) + 110ms) backwards, shake 0.6s ease calc(var(--d, 0ms) + 1500ms);
 }
 
 /* Sticky nav gains a frosted backdrop once the page scrolls */
@@ -185,7 +229,7 @@ html[data-scrolled] .nav-bar {
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation: none !important; transition: none !important; }
-  [data-animate] :is(.r, .r-pop, .r-fade, .r-mask > *, .r-slide, .r-type, .r-draw) { opacity: 1 !important; }
+  [data-animate] :is(.r, .r-pop, .r-fade, .r-mask > *, .r-slide, .r-type, .r-draw, .r-grow, .r-progress) { opacity: 1 !important; }
   .r-draw { stroke-dashoffset: 0; }
-  .packet, .ripple { display: none; }
+  .packet, .ripple, .typing, .scan, .spinner { display: none; }
 }

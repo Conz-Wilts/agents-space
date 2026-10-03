@@ -28,7 +28,9 @@ export function Mark({ size = 26, stroke = 1.75, color = "currentColor" }: { siz
 export function Logo({ small = false }: { small?: boolean }) {
   return (
     <span className="flex items-center gap-2.5 text-ink">
-      <Mark size={small ? 22 : 26} stroke={small ? 1.5 : 1.75} />
+      <span className="inline-flex transition-transform duration-700 ease-[cubic-bezier(0.3,1.4,0.5,1)] group-hover:rotate-[120deg]">
+        <Mark size={small ? 22 : 26} stroke={small ? 1.5 : 1.75} />
+      </span>
       <span
         className={
           small
