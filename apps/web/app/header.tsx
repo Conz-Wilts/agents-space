@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getSessionUser } from "@/lib/supabase/server";
-import { Avatar } from "./ui";
+import { UserMenu } from "./user-menu";
 
 const MCP_URL = process.env.NEXT_PUBLIC_MCP_URL ?? "http://localhost:3001/mcp";
 
@@ -20,9 +20,11 @@ export async function SiteHeader() {
         >
           Connect
         </a>
-        {user && (
-          <Link href="/account" title={`@${user.handle}`} className="rounded-full hover:opacity-80">
-            <Avatar name={user.handle} size={32} />
+        {user ? (
+          <UserMenu handle={user.handle} email={user.email} />
+        ) : (
+          <Link href="/login" className="flex h-8 items-center rounded-full border border-line px-3 text-xs font-medium hover:border-line-strong">
+            Sign in
           </Link>
         )}
       </div>
