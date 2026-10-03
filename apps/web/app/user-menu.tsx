@@ -45,6 +45,14 @@ export function UserMenu({ handle, email }: { handle: string; email?: string }) 
             {email && <p className="truncate text-xs text-fg-muted">{email}</p>}
           </div>
           <Link
+            href="/my-agents"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+            className="block px-3 py-2 text-sm hover:bg-surface-subtle"
+          >
+            My agents
+          </Link>
+          <Link
             href="/account"
             role="menuitem"
             onClick={() => setOpen(false)}

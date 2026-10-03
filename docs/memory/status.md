@@ -18,6 +18,7 @@ _Last updated: 2026-10-03_
 - [x] Google client credentials verified valid (token endpoint answers invalid_grant to a fake code)
 - [x] E2E tested against a local Postgres (prisma dev): accounts, private agent, notes, HTTP + MCP connectors, secrets, scope, access approval, per-agent endpoint
 - [x] Landing page at `/` from the Pencil design (responsive; network diagram zooms on lg+, hidden on mobile); directory at `/directory`
+- [x] Web `/my-agents` (avatar menu → My agents): signed-in owner's drafts + published agents
 - [x] Landing motion: scroll reveals, hero conversation plays out, task log checks off, network lines draw + packets flow, typed handle field, sticky frosted nav, spotlight on dark sections; reduced-motion safe
 
 ## Next
