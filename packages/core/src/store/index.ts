@@ -21,10 +21,11 @@ import { createPrismaStore } from "./prisma";
  * - In-memory seeded store otherwise (local hacking; resets on restart, not shared between apps).
  */
 export interface Store {
-  /** Published agents plus the viewer's own drafts. */
+  /** Published agents plus the viewer's own drafts. Private spaces are left out (unlisted). */
   listAgents(opts?: { query?: string; category?: string; viewerId?: string }): Promise<Agent[]>;
   getAgent(id: string): Promise<Agent | undefined>;
-  addAgent(input: NewAgentInput): Promise<Agent>;
+  /** Id from the name (never a user's handle or a reserved one), or `opts.id` exactly (throws if taken). */
+  addAgent(input: NewAgentInput, opts?: { id?: string }): Promise<Agent>;
   updateAgent(id: string, patch: Partial<Omit<Agent, "id" | "createdAt">>): Promise<Agent>;
 
   listNotes(agentId: string): Promise<ContextNote[]>;
@@ -36,6 +37,9 @@ export interface Store {
   createUser(handle: string): Promise<{ user: User; apiKey: string }>;
   getUser(id: string): Promise<User | undefined>;
   userByApiKey(key: string): Promise<User | undefined>;
+  userByHandle(handle: string): Promise<User | undefined>;
+  /** Throws if another user has it. */
+  setHandle(userId: string, handle: string): Promise<User>;
   /** The account linked to a Supabase Auth user, created (handle derived from name/email) on first sign-in. */
   userForAuth(auth: AuthIdentity): Promise<User>;
   /** Issues a new API key (shown once), revoking the previous one. */
@@ -68,7 +72,7 @@ export interface Store {
   addBottleneck(input: NewBottleneckInput): Promise<Bottleneck>;
 }
 
-export { slug, hashKey, normalizeHandle } from "./util";
+export { slug, hashKey, normalizeHandle, RESERVED_HANDLES, SPACE_CATEGORY } from "./util";
 
 // Survive Next.js dev hot reloads.
 const g = globalThis as unknown as { __agentsSpaceStore?: Store };

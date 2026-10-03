@@ -13,10 +13,13 @@ import {
   scopedActions,
   setConnectorSecret,
   slug,
+  claimSpace,
+  getSpace,
   type Agent,
+  type User,
 } from "@agents-space/core";
 import { currentUser, metadataPathFor, oauthEnabled, requireUser, withAuth } from "@/lib/auth";
-import { agentEndpoint, fmt, origin, safe, text } from "@/lib/format";
+import { agentEndpoint, fmt, origin, safe, spaceEndpoint, text } from "@/lib/format";
 
 let base = origin();
 const WEB_URL = process.env.NEXT_PUBLIC_WEB_URL ?? "http://localhost:3000";
@@ -31,6 +34,50 @@ async function ownedAgent(id: string, userId: string) {
   if (!a) throw new Error(`No agent "${id}". See my_agents.`);
   if (a.ownerId !== userId) throw new Error(`You don't own "${id}".`);
   return a;
+}
+
+/** Where the space stands and what to do next. */
+async function spaceStatus(user: User, space: Agent) {
+  const [notes, actions, requests] = await Promise.all([
+    store.listNotes(space.id),
+    scopedActions(space),
+    store.listAccessRequests({ ownerId: user.id }),
+  ]);
+  const mine = requests.filter((r) => r.agentId === space.id);
+  const approved = mine.filter((r) => r.status === "approved").length;
+  const pending = mine.filter((r) => r.status === "pending").length;
+  return [
+    // Built from the serving origin, not the stored endpoint: a claim made on another deployment (or locally) stored its own origin.
+    `Your space: ${spaceEndpoint(base, space.id)}`,
+    `@${user.handle} · ${space.visibility === "private" ? "private: only people you approve can call it, not listed in the directory" : "public: anyone can call it, listed in the directory"}`,
+    "",
+    `Shared context: ${notes.length ? notes.map((n) => n.title).join(", ") : "nothing yet"}`,
+    `Actions it can take: ${actions.length ? actions.map(actionSignature).join(", ") : "none yet"}`,
+    `People with access: ${approved}${pending ? ` (${pending} waiting: list_access_requests)` : ""}`,
+    "",
+    "Your rules:",
+    space.instructions,
+    "",
+    `Next steps (agent_id "${space.id}"):`,
+    "1. Share what it can use: add_context_note (availability, prices, policies, FAQs), or create_connector + attach_connector for a calendar or other system.",
+    "2. Set your rules in plain words with update_agent instructions: what it answers alone, what it asks you first, what it never touches.",
+    "3. Give the address to the people and agents you want to reach you, and approve them with review_access_request. To be listed in the directory, update_agent visibility public.",
+  ].join("\n");
+}
+
+/** `?claim=<handle>` on the MCP URL (from the landing page): claim it on the first signed-in request. */
+async function claimFromUrl(req: Request) {
+  const handle = new URL(req.url).searchParams.get("claim")?.toLowerCase();
+  const userId = req.auth?.clientId;
+  if (!handle || !userId) return;
+  const user = await store.getUser(userId);
+  if (!user?.authId || (await getSpace(user))) return;
+  try {
+    await claimSpace(user, handle, (id) => spaceEndpoint(base, id));
+  } catch (e) {
+    // Taken since the landing page checked, or invalid: my_space explains and offers claim_space.
+    console.warn("[claim]", handle, e instanceof Error ? e.message : e);
+  }
 }
 
 const agentBase = {
@@ -86,6 +133,44 @@ const handler = createMcpHandler(
       safe(async (_i, ctx) => {
         const u = await currentUser(ctx);
         return text(u ? `Signed in as @${u.handle} (${u.id}).` : `Not signed in. Sign in with Google at ${WEB_URL}/account to get an API key, or call create_account.`);
+      }),
+    );
+
+    /* ───────────── space ───────────── */
+
+    server.registerTool(
+      "my_space",
+      {
+        title: "My space",
+        description:
+          "Your space: your own MCP address that other people's agents call instead of waiting on you. Shows the address, what it shares, your rules, who has access, and next steps. Call this first when someone just connected.",
+        inputSchema: z.object({}),
+      },
+      safe(async (_i, ctx) => {
+        const user = await requireUser(ctx);
+        const space = await getSpace(user);
+        if (space) return text(await spaceStatus(user, space));
+        if (!user.authId)
+          return text(`You're signed in with an API key (@${user.handle}). Claiming a space needs a Google sign-in: reconnect this MCP without the key and sign in with Google when your client asks.`);
+        const wanted = ctx.http?.req ? new URL(ctx.http.req.url).searchParams.get("claim") : null;
+        return text(
+          `You don't have a space yet.${wanted ? ` "${wanted}" couldn't be claimed (taken or invalid).` : ""} Claim one with claim_space: it becomes your address at ${spaceEndpoint(base, "<handle>")}. Your current handle is @${user.handle}.`,
+        );
+      }),
+    );
+
+    server.registerTool(
+      "claim_space",
+      {
+        title: "Claim your space",
+        description:
+          "Claim a handle and create your space at <origin>/<handle>/mcp: a private MCP that answers for you with what you share and the rules you set. Needs a Google sign-in. The handle is locked once claimed.",
+        inputSchema: z.object({ handle: z.string().describe("2–32 lowercase letters, numbers or dashes, e.g. 'emma' or 'marcos-trattoria'") }),
+      },
+      safe(async ({ handle }, ctx) => {
+        const user = await requireUser(ctx);
+        const { user: owner, space, created } = await claimSpace(user, handle.toLowerCase(), (id) => spaceEndpoint(base, id));
+        return text(`${created ? "Claimed" : "Already yours"}: @${owner.handle}.\n\n${await spaceStatus(owner, space)}`);
       }),
     );
 
@@ -567,7 +652,7 @@ const handler = createMcpHandler(
   {
     serverInfo: { name: "agents-space", version: "0.2.0" },
     instructions:
-      "Agents Space: a directory of agents as shareable skills. Find agents (describe_bottleneck, search_agents), use them (use_agent, run_agent_action), request access to private ones (request_access), or build your own in natural language (prompt build_agent, or create_agent → add_context_note → create_connector → attach_connector → test_agent → publish_agent).",
+      "Agents Space gives people and businesses a space: their own MCP address that other people's agents call instead of waiting on them. If the user just connected, call my_space first (claim_space if they have none) and help them set it up. Agents Space is also a directory of agents as shareable skills. Find agents (describe_bottleneck, search_agents), use them (use_agent, run_agent_action), request access to private ones (request_access), or build your own in natural language (prompt build_agent, or create_agent → add_context_note → create_connector → attach_connector → test_agent → publish_agent).",
   },
 );
 
@@ -575,8 +660,9 @@ const handler = createMcpHandler(
 // start the Google sign-in flow. Without it (local dev, no Supabase) it stays open.
 const route = (req: Request) =>
   withAuth(
-    (r) => {
+    async (r) => {
       base = origin(r);
+      await claimFromUrl(r);
       return handler(r);
     },
     { required: oauthEnabled(), metadataPath: metadataPathFor("/mcp") },

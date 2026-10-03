@@ -28,3 +28,6 @@ export const origin = (req?: Request) =>
   (req ? new URL(req.url).origin : "http://localhost:3001");
 
 export const agentEndpoint = (base: string, id: string) => `${base}/a/${id}/mcp`;
+
+/** A space's address: `<origin>/<handle>/mcp`. */
+export const spaceEndpoint = (base: string, handle: string) => `${base}/${handle}/mcp`;

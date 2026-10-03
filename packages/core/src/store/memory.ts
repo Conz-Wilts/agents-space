@@ -2,7 +2,7 @@ import { seedAgents } from "../seed";
 import { matchAgents } from "../match";
 import { AgentSchema, type AccessRequest, type Bottleneck, type Connector, type ContextNote, type DeviceLogin, type User } from "../schema";
 import type { Store } from "./index";
-import { DEVICE_LOGIN_TTL_MS, handleCandidates, hashKey, newApiKey, newDeviceCode, newUserCode, normalizeHandle, normalizeUserCode, slug } from "./util";
+import { DEVICE_LOGIN_TTL_MS, RESERVED_HANDLES, handleCandidates, hashKey, listed, newApiKey, newDeviceCode, newUserCode, normalizeHandle, normalizeUserCode, slug } from "./util";
 
 const now = () => new Date().toISOString();
 
@@ -32,7 +32,7 @@ export function createMemoryStore(): Store {
 
   return {
     async listAgents({ query, category, viewerId } = {}) {
-      let all = agents.filter((a) => a.status === "published" || (viewerId && a.ownerId === viewerId));
+      let all = agents.filter((a) => (a.status === "published" && listed(a)) || (viewerId && a.ownerId === viewerId));
       if (category) all = all.filter((a) => a.category.toLowerCase() === category.toLowerCase());
       if (query) return matchAgents(all, query, [], all.length).map((r) => r.agent);
       return all;
@@ -40,9 +40,11 @@ export function createMemoryStore(): Store {
     async getAgent(id) {
       return agents.find((a) => a.id === id);
     },
-    async addAgent(input) {
-      let id = slug(input.name) || crypto.randomUUID();
-      if (agents.some((a) => a.id === id)) id = `${id}-${crypto.randomUUID().slice(0, 6)}`;
+    async addAgent(input, opts) {
+      let id = opts?.id ?? (slug(input.name) || crypto.randomUUID());
+      const taken = agents.some((a) => a.id === id);
+      if (opts?.id && taken) throw new Error(`"${id}" is taken.`);
+      if (!opts?.id && (taken || RESERVED_HANDLES.has(id) || users.some((u) => u.handle === id))) id = `${id}-${crypto.randomUUID().slice(0, 6)}`;
       const agent = AgentSchema.parse({ ...input, id, createdAt: now() });
       agents.push(agent);
       return agent;
@@ -84,6 +86,17 @@ export function createMemoryStore(): Store {
     async userByApiKey(key) {
       const h = hashKey(key);
       return users.find((u) => u.keyHash === h);
+    },
+    async userByHandle(handle) {
+      return users.find((u) => u.handle === handle);
+    },
+    async setHandle(userId, handle) {
+      const h = normalizeHandle(handle);
+      const user = users.find((u) => u.id === userId);
+      if (!user) throw new Error("No such user.");
+      if (users.some((u) => u.handle === h && u.id !== userId)) throw new Error(`Handle "${h}" is taken.`);
+      user.handle = h;
+      return user;
     },
     async userForAuth({ authId, email, name }) {
       const found = users.find((u) => u.authId === authId);

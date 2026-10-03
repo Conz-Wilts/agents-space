@@ -3,7 +3,7 @@ import { Prisma, PrismaClient } from "../generated/prisma/client";
 import { matchAgents } from "../match";
 import { AgentSchema, ConnectorActionSchema, type AccessRequest, type Agent, type Bottleneck, type Connector, type ContextNote, type DeviceLogin, type User } from "../schema";
 import type { Store } from "./index";
-import { DEVICE_LOGIN_TTL_MS, handleCandidates, hashKey, newApiKey, newDeviceCode, newUserCode, normalizeHandle, normalizeUserCode, slug } from "./util";
+import { DEVICE_LOGIN_TTL_MS, RESERVED_HANDLES, SPACE_CATEGORY, handleCandidates, hashKey, newApiKey, newDeviceCode, newUserCode, normalizeHandle, normalizeUserCode, slug } from "./util";
 
 const agentInclude = { connectors: true } satisfies Prisma.AgentInclude;
 type AgentRow = Prisma.AgentGetPayload<{ include: typeof agentInclude }>;
@@ -89,7 +89,10 @@ export function createPrismaStore(connectionString: string): Store {
     async listAgents({ query, category, viewerId } = {}) {
       const rows = await db.agent.findMany({
         where: {
-          OR: [{ status: "published" }, ...(viewerId ? [{ ownerId: viewerId }] : [])],
+          OR: [
+            { status: "published", NOT: { category: SPACE_CATEGORY, visibility: "private" } },
+            ...(viewerId ? [{ ownerId: viewerId }] : []),
+          ],
           ...(category ? { category: { equals: category, mode: "insensitive" as const } } : {}),
         },
         include: agentInclude,
@@ -100,20 +103,32 @@ export function createPrismaStore(connectionString: string): Store {
       return all;
     },
     getAgent,
-    async addAgent(input) {
+    async addAgent(input, opts) {
       const parsed = AgentSchema.parse({ ...input, id: "_", createdAt: new Date().toISOString() });
-      let id = slug(parsed.name) || crypto.randomUUID();
-      if (await db.agent.findUnique({ where: { id }, select: { id: true } })) id = `${id}-${crypto.randomUUID().slice(0, 6)}`;
-      const r = await db.agent.create({
-        data: {
-          ...agentData(parsed),
-          id,
-          ...(parsed.ownerId ? { ownerUser: { connect: { id: parsed.ownerId } } } : {}),
-          connectors: { create: parsed.connectors.map((c) => ({ connectorName: c.connector, actions: c.actions })) },
-        },
-        include: agentInclude,
-      });
-      return toAgent(r);
+      let id = opts?.id ?? (slug(parsed.name) || crypto.randomUUID());
+      // An explicit id (a space's handle) must be free; the create below throws P2002 if not.
+      if (
+        !opts?.id &&
+        (RESERVED_HANDLES.has(id) ||
+          (await db.agent.findUnique({ where: { id }, select: { id: true } })) ||
+          (await db.user.findUnique({ where: { handle: id }, select: { id: true } })))
+      )
+        id = `${id}-${crypto.randomUUID().slice(0, 6)}`;
+      try {
+        const r = await db.agent.create({
+          data: {
+            ...agentData(parsed),
+            id,
+            ...(parsed.ownerId ? { ownerUser: { connect: { id: parsed.ownerId } } } : {}),
+            connectors: { create: parsed.connectors.map((c) => ({ connectorName: c.connector, actions: c.actions })) },
+          },
+          include: agentInclude,
+        });
+        return toAgent(r);
+      } catch (e) {
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") throw new Error(`"${id}" is taken.`);
+        throw e;
+      }
     },
     async updateAgent(id, patch) {
       const current = await getAgent(id);
@@ -163,6 +178,19 @@ export function createPrismaStore(connectionString: string): Store {
     async userByApiKey(key) {
       const r = await db.user.findUnique({ where: { keyHash: hashKey(key) } });
       return r ? toUser(r) : undefined;
+    },
+    async userByHandle(handle) {
+      const r = await db.user.findUnique({ where: { handle } });
+      return r ? toUser(r) : undefined;
+    },
+    async setHandle(userId, handle) {
+      const h = normalizeHandle(handle);
+      try {
+        return toUser(await db.user.update({ where: { id: userId }, data: { handle: h } }));
+      } catch (e) {
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") throw new Error(`Handle "${h}" is taken.`);
+        throw e;
+      }
     },
     async userForAuth({ authId, email, name }) {
       const found = await db.user.findUnique({ where: { authId } });

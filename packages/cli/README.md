@@ -12,6 +12,7 @@ It prints a one-time code, opens the sign-in page when you press Enter, waits fo
 
 - `--web <origin>`: Agents Space site (default `$AGENTS_SPACE_WEB` or `https://agents-space-web.vercel.app`)
 - `--name <name>`: MCP server name in Claude Code (default `agents-space`)
+- `--claim <handle>`: claim this handle for your space (`<mcp origin>/<handle>/mcp`); the MCP claims it on your first request
 - `--scope <user|local|project>`: Claude Code scope (default `user`)
 - `--no-open`: never open a browser
 - `--no-claude`: skip registration and print the connect command

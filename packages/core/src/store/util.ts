@@ -9,6 +9,19 @@ export function normalizeHandle(handle: string) {
   return h;
 }
 
+/** Handles that would collide with routes or look official. A space lives at `/<handle>/mcp`. */
+export const RESERVED_HANDLES = new Set([
+  "a", "about", "account", "admin", "agent", "agents", "api", "app", "auth", "blog", "dashboard", "directory", "docs", "help",
+  "login", "logout", "mcp", "me", "oauth", "privacy", "root", "security", "settings", "signin", "signup", "space", "spaces",
+  "support", "system", "terms", "www",
+]);
+
+/** Category of a person's or business's space (the hosted agent at `/<handle>/mcp`). Private spaces are unlisted. */
+export const SPACE_CATEGORY = "Space";
+
+/** Shown in the directory: everything but private spaces, which are reached by address only. */
+export const listed = (a: { category: string; visibility: string }) => !(a.category === SPACE_CATEGORY && a.visibility === "private");
+
 export const newApiKey = () => `as_${randomBytes(24).toString("base64url")}`;
 
 /** Handle candidates for a new web sign-in: from the name or email, then with random suffixes. */
