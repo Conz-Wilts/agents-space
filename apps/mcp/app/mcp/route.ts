@@ -22,6 +22,17 @@ import {
   dropTable,
   setTableContext,
   OUTPUTS_TABLE,
+  checkPayment,
+  enablePayments,
+  money,
+  paymentLine,
+  paymentsEnabled,
+  payoutStatus,
+  priceLine,
+  requestPayment,
+  setPrice,
+  stripeDashboardLink,
+  SPACE_CATEGORY,
   type Agent,
   type User,
 } from "@agents-space/core";
@@ -68,12 +79,21 @@ async function accessTarget(ctx: Parameters<typeof requireUser>[0], agentId?: st
 
 /** Where the space stands and what to do next. */
 async function spaceStatus(user: User, space: Agent) {
-  const [notes, actions, tables, requests] = await Promise.all([
+  const [notes, actions, tables, requests, prices] = await Promise.all([
     store.listNotes(space.id),
     scopedActions(space),
     agentTables(space),
     store.listAccessRequests({ ownerId: user.id }),
+    store.listPrices(space.id),
   ]);
+  const payouts = paymentsEnabled() && user.stripeAccountId ? await payoutStatus(user).catch(() => undefined) : undefined;
+  const payments = !paymentsEnabled()
+    ? "not available on this deployment"
+    : !user.stripeAccountId
+      ? "off (enable_payments to charge through Stripe)"
+      : payouts?.ready
+        ? `on · prices: ${prices.length ? prices.map(priceLine).join("; ") : "none yet (set_price)"}`
+        : "Stripe setup not finished (enable_payments for the link)";
   const mine = requests.filter((r) => r.agentId === space.id);
   const approved = mine.filter((r) => r.status === "approved").length;
   const pending = mine.filter((r) => r.status === "pending").length;
@@ -86,6 +106,7 @@ async function spaceStatus(user: User, space: Agent) {
     `Actions it can take: ${actions.length ? actions.map(actionSignature).join(", ") : "none yet"}`,
     `Data tables: ${tables.map((t) => t.name).join(", ")}`,
     `People with access: ${approved}${pending ? ` (${pending} waiting: list_access_requests)` : ""}`,
+    `Payments: ${payments}`,
     "",
     "Your rules:",
     space.instructions,
@@ -94,7 +115,39 @@ async function spaceStatus(user: User, space: Agent) {
     "1. Share what it can use: add_context_note (availability, prices, policies, FAQs), create_table for data it should keep (bookings, requests, leads), or create_connector + attach_connector for a calendar or other system.",
     "2. Set your rules in plain words with update_agent instructions: what it answers alone, what it asks you first, what it never touches.",
     `3. Decide who can reach you: allow_access("@their-handle") (list_access, revoke_access). Their agents then call ask_space("${space.id}"). Visibility is "${space.visibility}"; change it with update_agent visibility (public, listed, restricted, private).`,
+    ...(!paymentsEnabled()
+      ? []
+      : !payouts?.ready
+        ? ["4. Charge for it (optional): enable_payments to connect Stripe, then set_price (e.g. a 'consultation' at 50 USD). Callers' agents get a checkout link with request_payment once a time is picked."]
+        : !prices.length
+          ? ["4. Payments are on: set_price for what you charge (e.g. a 'consultation' at 50 USD), and say in your rules when to ask for payment."]
+          : ["4. Payments are on: my_payments shows what came in; set_price / remove_price to change prices."]),
   ].join("\n");
+}
+
+/** `@emma`, or a bare word that could be a handle. */
+const HANDLE_QUERY = /^@?[a-zA-Z0-9][a-zA-Z0-9-]{0,30}[a-zA-Z0-9]$/;
+
+/** One space found by handle (already `reachable`): whether the viewer can use it, and what to call next. */
+async function spaceLine(space: Agent, viewer?: User) {
+  const h = space.id;
+  if (await store.hasAccess(space.id, viewer?.id)) {
+    const [actions, prices] = await Promise.all([scopedActions(space), store.listPrices(space.id)]);
+    const how = space.ownerId === viewer?.id ? "your space" : space.visibility === "public" ? "public" : "you're allowed in";
+    return [
+      `@${h}: ${space.tagline} (${how})`,
+      `Actions: ${actions.length ? actions.map(actionSignature).join(", ") : "none, answers from shared context"}`,
+      ...(prices.length ? [`Prices: ${prices.map(priceLine).join("; ")}`] : []),
+      `Next: ask_space("@${h}") for the rules and context, then run_agent_action / request_payment with agent_id "${h}".`,
+    ].join("\n");
+  }
+  // Restricted: only the name and "request access" are public. Listed: its info is open too.
+  const info = (await store.canSeeInfo(space.id, viewer?.id)) ? `: ${space.tagline}` : "";
+  if (!viewer) return `@${h}${info} (needs the owner's approval). Sign in, then request_access with agent_id "${h}".`;
+  const pending = (await store.listAccessRequests({ requesterId: viewer.id })).some((r) => r.agentId === h && r.status === "pending");
+  return pending
+    ? `@${h}${info} (needs the owner's approval). You asked for access; they haven't answered yet.`
+    : `@${h}${info} (needs the owner's approval, and you're not allowed in yet). Call request_access with agent_id "${h}" and say who you are, or ask them to allow @${viewer.handle}.`;
 }
 
 /** `@Emma ` → `emma`. */
@@ -305,6 +358,149 @@ const handler = createMcpHandler(
       }),
     );
 
+    /* ───────────── payments ───────────── */
+
+    server.registerTool(
+      "enable_payments",
+      {
+        title: "Turn on payments (Stripe Connect)",
+        description:
+          "Let your space and agents charge the people whose agents call them, paid out to your own Stripe account. The first call creates your Stripe Express account; while Stripe still needs details it returns an onboarding link for you (the human) to open. Call again to check status; once ready it returns a link to your Stripe dashboard.",
+        inputSchema: z.object({
+          country: z.string().length(2).describe("Two-letter country where you get paid (your bank account), e.g. 'MX' or 'US'. Ask the owner; it can't be changed later."),
+        }),
+      },
+      safe(async ({ country }, ctx) => {
+        const user = await requireUser(ctx);
+        if (!paymentsEnabled()) throw new Error("Payments aren't available on this deployment.");
+        const r = await enablePayments(user, {
+          country,
+          returnUrl: `${base}/payments?status=connected`,
+          refreshUrl: `${base}/payments?status=refresh`,
+        });
+        if (r.onboardingUrl)
+          return text(
+            `${r.created ? "Created your Stripe account" : "Your Stripe account isn't finished yet"} (${r.status.accountId}).\n\nOpen this link to finish setting up payouts (it works once and expires in a few minutes; call enable_payments again for a new one):\n${r.onboardingUrl}\n\nMeanwhile, set what you charge with set_price.`,
+          );
+        const prices = (await getSpace(r.user)) ? await store.listPrices(r.user.handle) : [];
+        const dashboard = await stripeDashboardLink(r.user).catch(() => undefined);
+        return text(
+          `Payments are on (${r.status.accountId}${r.status.payoutsEnabled ? ", payouts enabled" : ", payouts pending"}).\n\nPrices on your space: ${prices.length ? prices.map(priceLine).join("; ") : "none yet: set_price"}${dashboard ? `\nStripe dashboard (one-time link): ${dashboard}` : ""}`,
+        );
+      }),
+    );
+
+    server.registerTool(
+      "set_price",
+      {
+        title: "Set a price",
+        description:
+          "Add or change something your space (or one of your agents) charges for, e.g. a dental cleaning. Callers' agents see it and get a Stripe checkout link with request_payment. Needs enable_payments.",
+        inputSchema: z.object({
+          name: z.string().describe("Short id callers use, e.g. 'cleaning'"),
+          title: z.string().describe("What it is, shown on the checkout page, e.g. 'Dental cleaning (45 min)'"),
+          amount: z.number().positive().describe("In normal units, NOT cents: 800 means 800.00"),
+          currency: z.string().length(3).describe("e.g. 'mxn', 'usd'"),
+          description: z.string().optional().describe("Terms, e.g. 'Paid in advance to confirm the appointment; refundable up to 24h before'"),
+          agent_id: z.string().optional().describe("Defaults to your space"),
+        }),
+      },
+      safe(async ({ agent_id, ...p }, ctx) => {
+        const user = await requireUser(ctx);
+        const agent = agent_id ? await ownedAgent(agent_id, user.id) : (await ownSpace(ctx)).space;
+        const price = await setPrice(agent, p);
+        if (agent.pricing === "free") await store.updateAgent(agent.id, { pricing: "usage" });
+        const ready = paymentsEnabled() && user.stripeAccountId ? (await payoutStatus(user)).ready : false;
+        return text(
+          `${agent.name} charges ${priceLine(price)}.${ready ? "" : "\n\nCallers can't pay yet: finish enable_payments."}\n\nTell your rules when to charge, e.g. update_agent instructions: "Once someone picks a time, call request_payment('${price.name}') and hold the slot until paid."`,
+        );
+      }),
+    );
+
+    server.registerTool(
+      "remove_price",
+      {
+        title: "Remove a price",
+        description: "Stop charging for something.",
+        inputSchema: z.object({ name: z.string(), agent_id: z.string().optional().describe("Defaults to your space") }),
+      },
+      safe(async ({ name, agent_id }, ctx) => {
+        const user = await requireUser(ctx);
+        const agent = agent_id ? await ownedAgent(agent_id, user.id) : (await ownSpace(ctx)).space;
+        if (!(await store.deletePrice(agent.id, slug(name)))) throw new Error(`${agent.name} has no price "${name}".`);
+        return text(`Removed "${slug(name)}" from ${agent.name}.`);
+      }),
+    );
+
+    server.registerTool(
+      "request_payment",
+      {
+        title: "Get a payment link",
+        description:
+          "Get a Stripe checkout link for one of a space's or agent's prices (listed under 'Prices' in ask_space / use_agent), e.g. after picking an appointment time. Give the link to your human (or pay it), then confirm with check_payment.",
+        inputSchema: z.object({
+          agent_id: z.string().describe("The space handle (e.g. 'dr-lopez') or agent id"),
+          price: z.string().describe("Price name, e.g. 'cleaning'"),
+          note: z.string().default("").describe("What it's for, shown on the checkout page, e.g. 'Cleaning, Tue Oct 7 10:00, for Ana Ruiz'"),
+        }),
+      },
+      safe(async ({ agent_id, price, note }, ctx) => {
+        const user = await currentUser(ctx);
+        const a = await store.getAgent(plainHandle(agent_id));
+        if (!a || !(await store.hasAccess(a.id, user?.id))) throw new Error(`No access to "${agent_id}".`);
+        const p = await requestPayment(a, price, {
+          payer: user,
+          note,
+          successUrl: `${base}/payments?status=paid`,
+          cancelUrl: `${base}/payments?status=cancelled`,
+        });
+        return text(
+          `Pay ${money(p.amount, p.currency)} to ${a.name}${p.note ? ` for: ${p.note}` : ""}\n\n${p.url}\n\nPayment id: ${p.id}. After paying, check_payment("${p.id}") confirms it. The link expires in 24 hours.`,
+        );
+      }),
+    );
+
+    server.registerTool(
+      "check_payment",
+      {
+        title: "Check a payment",
+        description: "Whether a payment link was paid (open, paid or expired). For the payer and the owner.",
+        inputSchema: z.object({ payment_id: z.string() }),
+      },
+      safe(async ({ payment_id }, ctx) => {
+        const p = await checkPayment(payment_id.trim(), await currentUser(ctx));
+        return text(paymentLine(p));
+      }),
+    );
+
+    server.registerTool(
+      "my_payments",
+      {
+        title: "My payments",
+        description: "Payments to your space and agents (who asked, for what, paid or not), and payment links you asked for.",
+        inputSchema: z.object({}),
+      },
+      safe(async (_i, ctx) => {
+        const user = await requireUser(ctx);
+        const mine = (await store.listAgents({ viewerId: user.id })).filter((a) => a.ownerId === user.id);
+        const space = await getSpace(user);
+        const agents = space && !mine.some((a) => a.id === space.id) ? [...mine, space] : mine;
+        const received = (await Promise.all(agents.map((a) => store.listPayments({ agentId: a.id })))).flat();
+        // Refresh the open ones so the owner sees what's actually paid.
+        const fresh = await Promise.all(received.map((p) => (p.status === "open" ? checkPayment(p.id, user).catch(() => p) : p)));
+        const payer = async (id?: string) => (id ? `@${(await store.getUser(id))?.handle ?? "?"}` : "anonymous");
+        const inLines = await Promise.all(fresh.map(async (p) => `• ${p.agentId} ← ${await payer(p.payerId)}: ${paymentLine(p)}`));
+        const paid = fresh.filter((p) => p.status === "paid");
+        const totals = Object.entries(
+          paid.reduce<Record<string, number>>((t, p) => ((t[p.currency] = (t[p.currency] ?? 0) + p.amount), t), {}),
+        ).map(([c, n]) => money(n, c));
+        const out = (await store.listPayments({ payerId: user.id })).map((p) => `• → ${p.agentId}: ${paymentLine(p)}`);
+        return text(
+          `Received${totals.length ? ` (paid: ${totals.join(", ")})` : ""}:\n${inLines.join("\n") || "nothing yet"}\n\nYou asked to pay:\n${out.join("\n") || "nothing"}`,
+        );
+      }),
+    );
+
     /* ───────────── discover ───────────── */
 
     server.registerTool(
@@ -335,18 +531,26 @@ const handler = createMcpHandler(
       "search_agents",
       {
         title: "Search the agent directory",
-        description: "Find agents by job-to-be-done and/or the tools they operate. Includes agents you can see but not yet use (marked 'request access').",
+        description:
+          "Find a person's space by handle ('@emma'), or agents by job-to-be-done and/or the tools they operate. A handle finds the space even when it's not in the directory, and says whether you can use it (then ask_space) or need to request_access.",
         inputSchema: z.object({
-          query: z.string().describe("What you need done"),
+          query: z.string().describe("A handle like '@emma', or what you need done"),
           tools: z.array(z.string()).default([]),
           limit: z.number().int().min(1).max(25).default(5),
         }),
       },
       safe(async ({ query, tools, limit }, ctx) => {
         const user = await currentUser(ctx);
-        const results = matchAgents(await store.listAgents({ viewerId: user?.id }), query, tools, limit);
+        // A handle: look the space up directly, private ones included (unlisted, but reachable by handle).
+        const h = plainHandle(query);
+        const space = HANDLE_QUERY.test(query.trim()) ? await reachable(h, user?.id) : undefined;
+        const found = space?.kind === "hosted" && space.category === SPACE_CATEGORY ? space : undefined;
+        const head = found ? await spaceLine(found, user) : query.trim().startsWith("@") ? `No space "@${h}" on Agents Space.` : "";
+        if (query.trim().startsWith("@")) return text(head);
+        const results = matchAgents(await store.listAgents({ viewerId: user?.id }), query, tools, limit).filter((r) => r.agent.id !== found?.id);
         const rows = await withAccess(results.map((r) => r.agent), user?.id);
-        return text(rows.length ? rows.map((r) => fmt(r.agent, r.access)).join("\n\n") : "No matching agents.");
+        const list = rows.map((r) => fmt(r.agent, r.access)).join("\n\n");
+        return text([head, list].filter(Boolean).join("\n\n") || "No matching agents.");
       }),
     );
 
@@ -872,7 +1076,7 @@ const handler = createMcpHandler(
   {
     serverInfo: { name: "agents-space", version: "0.2.0" },
     instructions:
-      "Agents Space gives people and businesses a space: their own MCP address that other people's agents call instead of waiting on them. To reach someone (\"ask emma if Saturday works\", \"check @marcos-trattoria for a table\"), call ask_space with their handle. If the user just connected, call my_space first (claim_space if they have none) and help them set it up; allow_access / revoke_access / list_access manage who can use it. Agents Space is also a directory of agents as shareable skills. Find agents (describe_bottleneck, search_agents), use them (use_agent, run_agent_action), request access to ones that need approval (request_access), or build your own in natural language (prompt build_agent, or create_agent → add_context_note → create_table → create_connector → attach_connector → test_agent → publish_agent). Agents keep their own data in tables (create_table; built-in 'outputs'); no connector is needed to store data. An agent is either a skill other people's agents call (mode skill) or works for its owner on a schedule (mode scheduled → schedule_agent, run_schedule_now, schedule_runs); add_model / set_agent_model pick the LLM it runs on.",
+      "Agents Space gives people and businesses a space: their own MCP address that other people's agents call instead of waiting on them. To reach someone (\"ask emma if Saturday works\", \"check @marcos-trattoria for a table\"), call ask_space with their handle. If the user just connected, call my_space first (claim_space if they have none) and help them set it up; allow_access / revoke_access / list_access manage who can use it; enable_payments + set_price let it charge callers. When a space lists Prices, request_payment returns a Stripe checkout link for your user and check_payment confirms it. Agents Space is also a directory of agents as shareable skills. Find agents (describe_bottleneck, search_agents), use them (use_agent, run_agent_action), request access to ones that need approval (request_access), or build your own in natural language (prompt build_agent, or create_agent → add_context_note → create_table → create_connector → attach_connector → test_agent → publish_agent). Agents keep their own data in tables (create_table; built-in 'outputs'); no connector is needed to store data. An agent is either a skill other people's agents call (mode skill) or works for its owner on a schedule (mode scheduled → schedule_agent, run_schedule_now, schedule_runs); add_model / set_agent_model pick the LLM it runs on.",
   },
 );
 

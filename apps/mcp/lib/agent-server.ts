@@ -1,9 +1,9 @@
 import { createMcpHandler } from "mcp-handler";
 import { z } from "zod";
-import { store, actionInputSchema, loadSkill, runAgentAction, scopedActions } from "@agents-space/core";
+import { store, actionInputSchema, checkPayment, loadSkill, money, payablePrices, paymentLine, priceLine, requestPayment, runAgentAction, scopedActions } from "@agents-space/core";
 import { currentUser, metadataPathFor, oauthEnabled, requireUser, withAuth } from "@/lib/auth";
 import { reachable } from "@/lib/access";
-import { safe, text } from "@/lib/format";
+import { origin, safe, text } from "@/lib/format";
 import { registerRowTools } from "@/lib/table-tools";
 
 /**
@@ -21,7 +21,8 @@ async function serve(req: Request, id: string) {
   const access = await store.hasAccess(agent.id, userId);
   // Without use access, the tagline only goes to those who may see the agent's info (public/listed).
   const info = access || (await store.canSeeInfo(agent.id, userId));
-  const [skill, actions] = access ? await Promise.all([loadSkill(agent), scopedActions(agent)]) : ["", []];
+  const [skill, actions, prices] = access ? await Promise.all([loadSkill(agent), scopedActions(agent), payablePrices(agent)]) : ["", [], []];
+  const base = origin(req);
 
   const handler = createMcpHandler(
     (server) => {
@@ -64,6 +65,31 @@ async function serve(req: Request, id: string) {
             return text(JSON.stringify(await runAgentAction(agent, a.connector, a.action, args), null, 2).slice(0, 20000));
           }),
         );
+
+      if (prices.length) {
+        server.registerTool(
+          "request_payment",
+          {
+            title: "Get a payment link",
+            description: `Get a Stripe checkout link to pay ${agent.name}. Prices: ${prices.map(priceLine).join("; ")}. Give the link to your human (or pay it), then confirm with check_payment.`,
+            inputSchema: z.object({
+              price: z.enum(prices.map((p) => p.name) as [string, ...string[]]),
+              note: z.string().default("").describe("What it's for, shown on the checkout page, e.g. 'Cleaning, Tue Oct 7 10:00, for Ana Ruiz'"),
+            }),
+          },
+          safe(async ({ price, note }, c) => {
+            const user = await currentUser(c);
+            if (!(await store.hasAccess(agent.id, user?.id))) throw new Error("Access revoked.");
+            const p = await requestPayment(agent, price, { payer: user, note, successUrl: `${base}/payments?status=paid`, cancelUrl: `${base}/payments?status=cancelled` });
+            return text(`Pay ${money(p.amount, p.currency)} to ${agent.name}${p.note ? ` for: ${p.note}` : ""}\n\n${p.url}\n\nPayment id: ${p.id}. check_payment confirms it once paid. The link expires in 24 hours.`);
+          }),
+        );
+        server.registerTool(
+          "check_payment",
+          { title: "Check a payment", description: "Whether a payment link was paid (open, paid or expired).", inputSchema: z.object({ payment_id: z.string() }) },
+          safe(async ({ payment_id }, c) => text(paymentLine(await checkPayment(payment_id.trim(), await currentUser(c))))),
+        );
+      }
     },
     {
       serverInfo: { name: `agents-space/${agent.id}`, version: "1.0.0" },

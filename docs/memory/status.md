@@ -43,6 +43,8 @@ _Last updated: 2026-10-03_
 ## Testing
 - Test plan and results grid: [docs/test-plan.md](../test-plan.md)
 
+- [x] Payments (2026-10-03): `enable_payments` (Stripe Connect Express + onboarding link), `set_price` / `remove_price`, `request_payment` → Stripe Checkout link paid out to the owner, `check_payment`, `my_payments`. Prices show in the skill (ask_space / use_agent / `/<handle>/mcp`, which also gets request_payment + check_payment). Tables `Price`, `Payment`, column `User.stripeAccountId` (migration `20261003213000_payments`, applied). Tested end to end against the Supabase DB + Stripe test mode: dentist space with availability + a MX$800 cleaning, patient's agent got the link, paid with 4242, check_payment → paid, transfer reached the connected account. (The test used an API-made Custom test account; the Express onboarding page was checked to load but not filled in.)
+
 ## Next
 - [ ] Push the `ai_models` migration (after `agent_schedules`)
 - [ ] Push the `agent_schedules` migration; set `CRON_SECRET` (+ AI Gateway) on `agents-space-mcp`. Every-minute cron needs Vercel Pro
@@ -62,6 +64,7 @@ _Last updated: 2026-10-03_
 - Ids and handles are a public namespace: id collisions (suffixing in `register_agent`/`create_agent`, `/api/handles/<h>`, `claim_space`) reveal that an id is taken, even by a private or draft agent, but nothing about it.
 - Google name + picture aren't stored on `User`, so agent tiles show them only to the signed-in owner (my agents, own agent pages); everyone else sees the `owner` handle and initials.
 - Agent tables: equality filters only (no ranges, sorting by column or full-text); max 20 tables, 40 columns, 10k rows per table, 16KB per row; no web UI for tables yet; anonymous callers on public agents can add rows but can't read them back.
+- Payments: no webhook (status is polled on check_payment / my_payments); no refunds or platform fee; a paid slot isn't auto-booked in a calendar: the space's rules tell the caller's agent to book after check_payment says paid. Google Calendar still needs OAuth, which connectors don't do (Cal.com-style API keys work).
 - Privacy, Security, X links on the landing are `#` placeholders.
 - No web (non-MCP) claim path yet: someone who won't install an MCP can't claim a space from the site.
 - `update_agent` can change a space's category, which makes it stop being a space.

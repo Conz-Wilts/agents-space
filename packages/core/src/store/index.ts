@@ -11,6 +11,8 @@ import type {
   NewAgentInput,
   NewBottleneckInput,
   TableRow,
+  Payment,
+  Price,
   User,
 } from "../schema";
 export type RowQuery = { where?: Record<string, unknown>; createdBy?: string; limit?: number; offset?: number; order?: "asc" | "desc" };
@@ -94,6 +96,19 @@ export interface Store {
   setModelKey(name: string, ciphertext: string): Promise<void>;
   /** The encrypted key. Only the model runtime should read it. */
   getModelKey(name: string): Promise<string | undefined>;
+
+  /** Link (or unlink, with undefined) the user's Stripe Connect account. */
+  setStripeAccount(userId: string, accountId: string | undefined): Promise<User>;
+
+  listPrices(agentId: string): Promise<Price[]>;
+  /** Create or replace the price with this name. */
+  upsertPrice(price: Omit<Price, "updatedAt">): Promise<Price>;
+  deletePrice(agentId: string, name: string): Promise<boolean>;
+
+  addPayment(p: Omit<Payment, "id" | "createdAt" | "status" | "paidAt">): Promise<Payment>;
+  getPayment(id: string): Promise<Payment | undefined>;
+  setPaymentStatus(id: string, status: Payment["status"]): Promise<Payment>;
+  listPayments(opts: { agentId?: string; payerId?: string }): Promise<Payment[]>;
 
   requestAccess(agentId: string, requesterId: string, message?: string): Promise<AccessRequest>;
   listAccessRequests(opts: { ownerId?: string; requesterId?: string }): Promise<AccessRequest[]>;

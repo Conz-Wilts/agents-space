@@ -1,5 +1,5 @@
 import { matchAgents } from "../match";
-import { AgentSchema, type Agent, type AccessRequest, type AgentSchedule, type Bottleneck, type Connector, type ContextNote, type DataTable, type DeviceLogin, type Model, type TableRow, type User } from "../schema";
+import { AgentSchema, type Agent, type AccessRequest, type AgentSchedule, type Bottleneck, type Connector, type ContextNote, type DataTable, type DeviceLogin, type Model, type Payment, type Price, type TableRow, type User } from "../schema";
 import type { Store } from "./index";
 import { DEVICE_LOGIN_TTL_MS, RESERVED_HANDLES, handleCandidates, hashKey, newApiKey, newDeviceCode, newUserCode, normalizeHandle, normalizeUserCode, slug } from "./util";
 
@@ -21,6 +21,8 @@ export function createMemoryStore(): Store {
   const secrets = new Map<string, Record<string, string>>();
   const requests: AccessRequest[] = [];
   const bottlenecks: Bottleneck[] = [];
+  const prices: Price[] = [];
+  const payments: Payment[] = [];
   const deviceLogins = new Map<string, DeviceLogin>(); // by device code hash
   const liveByUserCode = (code: string) => {
     const c = normalizeUserCode(code);
@@ -255,6 +257,48 @@ export function createMemoryStore(): Store {
     },
     async getModelKey(name) {
       return models.find((x) => x.name === name)?.key;
+    },
+
+    async setStripeAccount(userId, accountId) {
+      const user = users.find((u) => u.id === userId);
+      if (!user) throw new Error("No such user.");
+      user.stripeAccountId = accountId;
+      return user;
+    },
+
+    async listPrices(agentId) {
+      return prices.filter((p) => p.agentId === agentId);
+    },
+    async upsertPrice(price) {
+      const next = { ...price, updatedAt: now() };
+      const i = prices.findIndex((p) => p.agentId === price.agentId && p.name === price.name);
+      if (i >= 0) prices[i] = next;
+      else prices.push(next);
+      return next;
+    },
+    async deletePrice(agentId, name) {
+      const i = prices.findIndex((p) => p.agentId === agentId && p.name === name);
+      if (i >= 0) prices.splice(i, 1);
+      return i >= 0;
+    },
+
+    async addPayment(p) {
+      const payment: Payment = { ...p, id: crypto.randomUUID(), status: "open", createdAt: now() };
+      payments.push(payment);
+      return payment;
+    },
+    async getPayment(id) {
+      return payments.find((p) => p.id === id);
+    },
+    async setPaymentStatus(id, status) {
+      const p = payments.find((x) => x.id === id);
+      if (!p) throw new Error(`No payment "${id}"`);
+      p.status = status;
+      if (status === "paid") p.paidAt ??= now();
+      return p;
+    },
+    async listPayments({ agentId, payerId }) {
+      return payments.filter((p) => (!agentId || p.agentId === agentId) && (!payerId || p.payerId === payerId)).reverse();
     },
 
     async requestAccess(agentId, requesterId, message = "") {

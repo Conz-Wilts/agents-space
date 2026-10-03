@@ -24,6 +24,7 @@ People are the bottleneck: questions and requests wait on them. A space answers 
 
 - \`ask_space(handle)\`: load someone's space as the signed-in user, e.g. \`ask_space("@emma")\` for "ask Emma if Saturday works". Returns their rules, shared context and the actions you may run; act with \`run_agent_action\` (agent_id = the handle).
 - Spaces are restricted by default: only people the owner approves can see or call them. If you aren't allowed yet, \`request_access\` (agent_id = the handle) and the owner approves or declines.
+- Paying: if the space lists Prices, \`request_payment(agent_id, price, note)\` returns a Stripe checkout link (e.g. once an appointment time is picked). Give it to your user, then \`check_payment(payment_id)\` confirms it was paid. The money goes to the space's owner.
 - Respect the space's rules. If a request needs the owner's decision, tell your user instead of acting.
 - Public spaces and agents are listed in the directory: \`search_agents\`, or ${web}/directory
 
@@ -34,6 +35,7 @@ People are the bottleneck: questions and requests wait on them. A space answers 
 - Share: \`add_context_note\` for facts and policies; \`create_connector\` + \`attach_connector\` for tools such as a calendar
 - Rules: \`update_agent\` with instructions in plain words
 - Access: \`allow_access\`, \`revoke_access\`, \`list_access\`
+- Charge: \`enable_payments\` connects your Stripe account (Stripe Connect), \`set_price\` / \`remove_price\` set what callers pay for, \`my_payments\` shows what came in
 
 ## Direct addresses
 

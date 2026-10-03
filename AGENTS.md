@@ -32,7 +32,7 @@ pnpm db:push      # DEPRECATED: schema is owned by supabase/schemas (see Rules)
 pnpm db:migrate   # DEPRECATED: use `pnpm supabase db schema declarative sync`
 ```
 
-Env: one `.env.local` at the repo root (see `.env.example`): `DATABASE_URL` (Supabase pooled, port 6543), `DIRECT_URL` (session pooler, port 5432; use the `aws-0-<region>.pooler.supabase.com` host, since `db.<ref>.supabase.co` is IPv6-only), `CONNECTOR_SECRETS_KEY`, `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (Google sign-in via Supabase Auth). Without `DATABASE_URL` the store is in-memory.
+Env: one `.env.local` at the repo root (see `.env.example`): `DATABASE_URL` (Supabase pooled, port 6543), `DIRECT_URL` (session pooler, port 5432; use the `aws-0-<region>.pooler.supabase.com` host, since `db.<ref>.supabase.co` is IPv6-only), `CONNECTOR_SECRETS_KEY`, `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (Google sign-in via Supabase Auth), `STRIPE_SECRET_KEY` (platform account, Connect enabled; payments are off without it). Without `DATABASE_URL` the store is in-memory.
 
 Test the MCP: `npx @modelcontextprotocol/inspector` → `http://localhost:3001/mcp`.
 
@@ -41,6 +41,7 @@ Main server `/mcp`. Auth: OAuth — MCP clients sign in with Google through Supa
 - Account: `create_account`, `whoami`
 - Space: `claim_space` (Google sign-in only; locks the handle), `my_space`; reach someone with `ask_space(handle)`; owner whitelist `allow_access` / `revoke_access` / `list_access` (act on your own space; pass `agent_id` to manage any agent you own). `/mcp?claim=<handle>` (the URL the landing page hands out) claims it on the first signed-in request
 - Visibility (every agent, spaces included; `visibility` on `create_agent` / `update_agent` / `publish_agent`): `public` = listed, anyone can use; `listed` = in the directory, info open, use needs approval; `restricted` = hidden from the directory and info, only approved people see or use it (anyone with the id/link sees the name and can `request_access`); `private` = owner only, behaves as if it does not exist (same errors as an unknown id). Spaces default to `restricted`. "Approved" = an `approved` AccessRequest; revoking sets it to `denied`. Drafts stay owner-only.
+- Payments (Stripe Connect, `packages/core/src/payments.ts`): owner `enable_payments` (Express account + onboarding link) → `set_price` / `remove_price` → `my_payments`; callers `request_payment` (Checkout link, destination charge to the owner) → `check_payment` (polls Stripe; no webhook). Prices appear in the skill text; `/<handle>/mcp` gets `request_payment` / `check_payment` too.
 - Discover: `describe_bottleneck`, `search_agents`, `list_agents`, `get_agent`
 - Access: `request_access`, `my_access_requests`, `list_access_requests`, `review_access_request`
 - Build: `create_agent` → `add_context_note` (+ `remove_context_note`) → `create_table` (+ `set_table_context`, `drop_table`) → `create_connector` → `set_connector_secret` → `attach_connector` → `test_agent` → `publish_agent` (+ `update_agent`, `detach_connector`, `unpublish_agent`, `my_agents`, `my_connectors`); prompt `build_agent`

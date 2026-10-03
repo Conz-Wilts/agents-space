@@ -7,3 +7,4 @@ export * from "./spaces";
 export * from "./tables";
 export * from "./schedules";
 export * from "./models";
+export * from "./payments";

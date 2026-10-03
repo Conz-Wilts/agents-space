@@ -12,6 +12,8 @@ export const UserSchema = z.object({
   /** Supabase Auth user id, for accounts created by signing in on the web. */
   authId: z.string().optional(),
   email: z.string().optional(),
+  /** Stripe Connect (Express) account that receives this user's payments. */
+  stripeAccountId: z.string().optional(),
   createdAt: z.string(),
 });
 export type User = z.infer<typeof UserSchema>;
@@ -253,6 +255,40 @@ export const AccessRequestSchema = z.object({
   decidedAt: z.string().optional(),
 });
 export type AccessRequest = z.infer<typeof AccessRequestSchema>;
+
+/** Something an agent charges for (e.g. a dental cleaning), paid through the owner's Stripe account. */
+export const PriceSchema = z.object({
+  agentId: z.string(),
+  /** Slug callers pass to request_payment, e.g. `cleaning`. */
+  name: z.string().regex(/^[a-z0-9][a-z0-9-]*$/),
+  title: z.string(),
+  description: z.string().default(""),
+  /** In the currency's smallest unit (cents / centavos). */
+  amount: z.number().int().positive(),
+  /** Lowercase ISO code, e.g. `mxn`, `usd`. */
+  currency: z.string().regex(/^[a-z]{3}$/),
+  updatedAt: z.string(),
+});
+export type Price = z.infer<typeof PriceSchema>;
+
+/** A checkout link one caller got for one price. Paid out to the agent owner (Stripe destination charge). */
+export const PaymentSchema = z.object({
+  id: z.string(),
+  agentId: z.string(),
+  price: z.string(),
+  /** Who asked for the link; absent for anonymous callers of a public agent. */
+  payerId: z.string().optional(),
+  amount: z.number().int(),
+  currency: z.string(),
+  /** What it's for, e.g. "Cleaning, Tue Oct 7 10:00". Shown on the checkout page. */
+  note: z.string().default(""),
+  stripeSessionId: z.string(),
+  url: z.string(),
+  status: z.enum(["open", "paid", "expired"]),
+  createdAt: z.string(),
+  paidAt: z.string().optional(),
+});
+export type Payment = z.infer<typeof PaymentSchema>;
 
 /** A human explaining how they are the bottleneck. */
 export const BottleneckSchema = z.object({
