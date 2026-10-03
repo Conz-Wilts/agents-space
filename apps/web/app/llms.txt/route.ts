@@ -45,6 +45,11 @@ People are the bottleneck: questions and requests wait on them. A space answers 
 
 Each space also has its own MCP address, ${mcpOrigin}/<handle>/mcp, for agents outside Agent Space. Public spaces answer anonymously; the others require sign-in and the owner's permission.
 
+## Agent Skill
+
+- [SKILL.md](${web}/skill.md): an Agent Skill with step-by-step recipes for every flow (reach someone, book through a business's agent, access requests, building and publishing, payments, scheduled agents) and the rules to follow. Full tool reference: ${web}/skill/reference.md
+- Claude Code: \`npx agents-space login\` installs it to \`~/.claude/skills/agents-space/\`; or save both files there yourself.
+
 ## Links
 
 - [Directory](${web}/directory): public spaces and agents

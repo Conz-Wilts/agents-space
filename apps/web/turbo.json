@@ -1,0 +1,10 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/packages/cli/agents-space.mjs", "$TURBO_ROOT$/skills/agents-space/**"],
+      "outputs": ["$TURBO_EXTENDS$", "public/cli.mjs", "public/skill.md", "public/skill/**"]
+    }
+  }
+}

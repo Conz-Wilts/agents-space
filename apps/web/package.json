@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "prebuild": "node -e \"require('fs').copyFileSync('../../packages/cli/agents-space.mjs','public/cli.mjs')\"",
+    "prebuild": "node scripts/copy-static.mjs",
+    "predev": "node scripts/copy-static.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",

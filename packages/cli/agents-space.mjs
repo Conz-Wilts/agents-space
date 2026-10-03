@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import os from "node:os";
+import path from "node:path";
 import process from "node:process";
 
 const VERSION = "0.1.0";
@@ -9,8 +11,10 @@ const DEFAULT_WEB = "https://agents-space-web.vercel.app";
 const SCOPES = ["user", "local", "project"];
 
 const USAGE = `Usage: agents-space [login] [flags]
+       agents-space skill [--web <origin>]
 
-Sign in to Agents Space and connect it to Claude Code.
+Sign in to Agents Space and connect it to Claude Code. Login also installs the
+agents-space skill to ~/.claude/skills/agents-space; \`skill\` only (re)installs it.
 
 Flags:
   --web <origin>       Agents Space site (default: $AGENTS_SPACE_WEB or ${DEFAULT_WEB})
@@ -19,6 +23,7 @@ Flags:
   --scope <scope>      user, local or project (default: user)
   --no-open            Never open a browser
   --no-claude          Skip Claude Code registration and print the connect command
+  --no-skill           Don't install the agents-space skill for Claude Code
   --claude-bin <path>  Claude Code binary (default: claude)
   -h, --help           Show this help
   --version            Show the version
@@ -33,9 +38,11 @@ function parseArgs(argv) {
     claude: true,
     claudeBin: "claude",
     claim: undefined,
+    skill: true,
+    command: "login",
   };
   const args = [...argv];
-  if (args[0] === "login") args.shift();
+  if (args[0] === "login" || args[0] === "skill") opts.command = args.shift();
   const value = (flag) => {
     const v = args.shift();
     if (v === undefined || v.startsWith("--")) throw new Error(`${flag} needs a value`);
@@ -52,6 +59,7 @@ function parseArgs(argv) {
     else if (a === "--claude-bin") opts.claudeBin = value(a);
     else if (a === "--no-open") opts.open = false;
     else if (a === "--no-claude") opts.claude = false;
+    else if (a === "--no-skill") opts.skill = false;
     else throw new Error(`Unknown argument: ${a}`);
   }
   if (!SCOPES.includes(opts.scope)) throw new Error(`--scope must be one of: ${SCOPES.join(", ")}`);
@@ -143,6 +151,53 @@ async function register(opts, res) {
   return !error && code === 0;
 }
 
+/** Files of the agents-space skill: path on the web origin → file name in the skill folder. */
+const SKILL_FILES = [
+  ["skill.md", "SKILL.md"],
+  ["skill/reference.md", "reference.md"],
+];
+
+/** Claude Code's user skills folder (it honours CLAUDE_CONFIG_DIR like the rest of its config). */
+function skillDir() {
+  const base = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+  return path.join(base, "skills", "agents-space");
+}
+
+async function fetchText(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
+  return res.text();
+}
+
+/**
+ * Fetch the skill from the web origin and write it to the user's Claude Code skills folder.
+ * Says what it added or replaced; on failure it reports and moves on (returns false).
+ */
+async function installSkill(opts) {
+  const dir = skillDir();
+  try {
+    const files = await Promise.all(SKILL_FILES.map(async ([p, name]) => [name, await fetchText(`${opts.web}/${p}`)]));
+    if (!/^---\r?\nname: agents-space\b/.test(files[0][1])) throw new Error(`${opts.web}/skill.md is not the agents-space skill`);
+    await mkdir(dir, { recursive: true });
+    const added = [];
+    const replaced = [];
+    for (const [name, body] of files) {
+      const file = path.join(dir, name);
+      const old = await readFile(file, "utf8").catch(() => undefined);
+      if (old === body) continue;
+      await writeFile(file, body);
+      (old === undefined ? added : replaced).push(name);
+    }
+    if (replaced.length) console.log(`Updated the agents-space skill in ${dir} (replaced your existing ${replaced.join(", ")}).`);
+    else if (added.length) console.log(`Installed the agents-space skill to ${dir}.`);
+    else console.log(`The agents-space skill in ${dir} is already up to date.`);
+    return true;
+  } catch (e) {
+    console.log(`Skipped installing the agents-space skill (${e.message}). Try again later with: agents-space skill`);
+    return false;
+  }
+}
+
 async function login(opts) {
   const clientName = `Claude Code on ${os.hostname()}`.slice(0, 60);
   let start;
@@ -179,6 +234,7 @@ async function login(opts) {
   console.log(`Signed in as @${res.handle}.`);
   if (opts.claude && (await register(opts, res))) {
     console.log("Agents Space is connected to Claude Code. Start a new session and run /mcp to see it.");
+    if (opts.skill) await installSkill(opts);
     return 0;
   }
   console.log("Run this to connect Claude Code:");
@@ -204,6 +260,7 @@ async function main() {
     console.log(VERSION);
     return 0;
   }
+  if (opts.command === "skill") return (await installSkill(opts)) ? 0 : 1;
   return login(opts);
 }
 

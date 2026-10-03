@@ -40,5 +40,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# CLI copied from packages/cli by prebuild
+# Copied by scripts/copy-static.mjs (prebuild / predev)
 /public/cli.mjs
+/public/skill.md
+/public/skill/
