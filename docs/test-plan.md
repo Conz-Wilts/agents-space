@@ -111,8 +111,13 @@ Each teammate does both parts once, about 10 minutes. Do the owner part first so
 4. **Calendar (David, Chris, Emma):** "Connect my Google Calendar with only the free/busy tool, and
    give my space access to it." The agent calls `connect_app` and hands you a Composio sign-in link;
    open it and approve. Then check with "Show my space" that the space has exactly one calendar
-   action. Ask your agent which free/busy tool `app_tools` lists for `googlecalendar` if it's unsure.
-   **Never attach a tool that lists or reads events**: callers would see titles and places.
+   action: `GOOGLECALENDAR_FIND_FREE_SLOTS` (returns busy blocks plus computed free slots; easiest
+   for callers). `GOOGLECALENDAR_FREE_BUSY_QUERY` also works (busy blocks only). Both use Google's
+   freeBusy API, so no titles, places or attendees. Google sign-in is Composio-managed OAuth.
+   **Never attach `GOOGLECALENDAR_EVENTS_LIST` or any tool that reads events**: callers would see
+   titles and places.
+   Known leak: the caller picks which calendar ids to query, so they can see free/busy of any
+   calendar the owner can see (e.g. coworkers'). Free/busy only, but note it if it happens.
 5. **Marco:** add context notes (hours, menu, allergens, open slots), then:
    - "Give my space a reservations table: name, party size, date, time, status (requested /
      confirmed / cancelled). Callers can add and see only their own bookings." (`caller_access: own`,
@@ -204,7 +209,8 @@ What the Blocked scenarios wait on, in build order:
 - [ ] Every owner allowed the other three teammates
 - [ ] API keys issued for Poke, OpenClaw / Hermes, Muse
 - [ ] Production runs the latest main with agent tables, Composio and payments (ask whoever deployed last)
-- [ ] `COMPOSIO_API_KEY` set on both Vercel projects (otherwise `connect_app` doesn't show up)
+- [ ] `COMPOSIO_API_KEY` set on both Vercel projects (otherwise `connect_app` doesn't show up).
+  The key works: it lists Google Calendar's tools (checked 2026-10-03)
 - [ ] Stripe keys on production are **test mode** (`sk_test_...`), so 4242 works and no real money moves
 - [ ] One teammate completes a real Google Calendar sign-in through Composio before everyone else
   does (never done end to end yet)
