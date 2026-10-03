@@ -19,13 +19,17 @@ _Last updated: 2026-10-03_
 - [x] E2E tested against a local Postgres (prisma dev): accounts, private agent, notes, HTTP + MCP connectors, secrets, scope, access approval, per-agent endpoint
 - [x] Landing page at `/` from the Pencil design (responsive; network diagram zooms on lg+, hidden on mobile); directory at `/directory`
 - [x] Web `/my-agents` (avatar menu → My agents): signed-in owner's drafts + published agents
+- [x] Web agent pages `/agents/<id>` (cards link there), Visvine-style: doc list (Instructions, each context note, Tools) + rendered markdown with a Raw toggle; drafts owner-only, private agents hide the skill without access
+- [x] Web owner controls on `/agents/<id>`: Public/Private switch, Share (copy page / MCP link); My agents lists pending access requests with Approve/Deny; non-owners on private agents get a Request access form
+- [x] Web connector secrets: owners set connector secrets on the agent page and in `/account` → Connectors & secrets (write-only; web needs `CONNECTOR_SECRETS_KEY`)
+- [x] Sign-in `redirectTo` is the bare `/auth/callback`; `next` rides in an `auth_next` cookie so Supabase's exact allowlist match works
 - [x] Landing motion: scroll reveals, hero conversation plays out, task log checks off, network lines draw + packets flow, typed handle field, sticky frosted nav, spotlight on dark sections; reduced-motion safe
 
 ## Next
 - [ ] Create the Supabase project, set `DATABASE_URL` / `DIRECT_URL` / `CONNECTOR_SECRETS_KEY` (local + Vercel), `pnpm db:push && pnpm db:seed` — switch to `db:migrate` migrations before real users
 - [x] `apps/web` deployed: Vercel project `agents-space-web` (team SUPAYAPPERS, root dir `apps/web`, prod env set) → https://agents-space-web.vercel.app; MCP on `agents-space-mcp` → https://agents-space-mcp.vercel.app (CLI deploys, no git integration yet)
 - [ ] Deploy `apps/mcp` as its own Vercel project; set `PUBLIC_MCP_ORIGIN`, `NEXT_PUBLIC_MCP_URL`
-- [ ] Web: agent detail pages, visibility badges, "request access" button
+- [ ] Web: edit instructions / notes, publish/unpublish, invite a person by handle
 - [ ] Supabase dashboard: Google provider, redirect URLs, OAuth Server (path `/oauth/consent`, dynamic registration) — then test sign-in from Claude / MCP Inspector end to end (**not yet tested live**: no `NEXT_PUBLIC_SUPABASE_URL` set)
 - [ ] Rate limiting on writes
 - [ ] Embedding-based matching

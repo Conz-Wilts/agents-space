@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { createClient, getSessionUser } from "@/lib/supabase/server";
 
@@ -5,7 +6,9 @@ import { createClient, getSessionUser } from "@/lib/supabase/server";
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const next = searchParams.get("next");
+  const cookieStore = await cookies();
+  const next = searchParams.get("next") ?? cookieStore.get("auth_next")?.value;
+  cookieStore.delete({ name: "auth_next", path: "/auth/callback" });
   const dest = next?.startsWith("/") && !next.startsWith("//") ? next : "/directory";
 
   if (code) {

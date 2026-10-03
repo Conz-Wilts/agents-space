@@ -1,4 +1,6 @@
 import { redirect } from "next/navigation";
+import { store } from "@agents-space/core";
+import { ConnectorCard } from "@/components/connectors/connector-card";
 import { getSessionUser } from "@/lib/supabase/server";
 import { SiteHeader } from "../header";
 import { Avatar } from "../ui";
@@ -9,6 +11,7 @@ const MCP_URL = process.env.NEXT_PUBLIC_MCP_URL ?? "http://localhost:3001/mcp";
 export default async function Account() {
   const user = await getSessionUser();
   if (!user) redirect("/login?next=/account");
+  const connectors = await store.listConnectors(user.id);
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-4 py-6 sm:px-6">
@@ -30,6 +33,15 @@ export default async function Account() {
         <section className="flex flex-col gap-3 rounded-2xl border border-line p-5">
           <h2 className="text-sm font-semibold">MCP API key</h2>
           <ApiKeyForm hasKey={!!user.keyHash} mcpUrl={MCP_URL} />
+        </section>
+
+        <section className="flex flex-col gap-3">
+          <h2 className="text-sm font-semibold">Connectors</h2>
+          {connectors.length === 0 ? (
+            <p className="text-sm text-fg-muted">None yet.</p>
+          ) : (
+            connectors.map((c) => <ConnectorCard key={c.name} connector={c} owner />)
+          )}
         </section>
       </main>
     </div>

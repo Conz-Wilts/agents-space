@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { Agent } from "@agents-space/core";
 
 /** Soft wash + accent pairs, blue family. Agents and people get one by hashing their name. */
@@ -56,12 +57,13 @@ function Poster({ name }: { name: string }) {
   );
 }
 
-/** Netflix-style poster tile: portrait cover, title + tagline over a bottom fade. */
+/** Netflix-style poster tile, linking to the agent page: portrait cover, title + tagline over a bottom fade. */
 export function AgentCard({ agent }: { agent: Agent }) {
   return (
-    <article
+    <Link
+      href={`/agents/${agent.id}`}
       title={agent.tagline}
-      className="group relative aspect-[2/3] overflow-hidden rounded-xl border border-line bg-surface transition duration-200 hover:z-10 hover:scale-[1.04] hover:shadow-float"
+      className="group relative block aspect-[2/3] overflow-hidden rounded-xl border border-line bg-surface transition duration-200 hover:z-10 hover:scale-[1.04] hover:shadow-float"
     >
       <Poster name={agent.name} />
       <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-white via-white/90 to-transparent p-3 pt-10">
@@ -72,7 +74,7 @@ export function AgentCard({ agent }: { agent: Agent }) {
           <span className="truncate">{agent.owner}</span>
         </div>
       </div>
-    </article>
+    </Link>
   );
 }
 
