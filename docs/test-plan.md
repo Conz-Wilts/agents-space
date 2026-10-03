@@ -114,6 +114,10 @@ push for approvals, "Always allow @domain".
 
 1. Connect each platform assigned to you.
 2. Complete the Google sign-in, or paste your API key for header-based platforms.
+   **One key per account:** generating a new key kills the old one everywhere. Generate it once at
+   `/account` and paste the same key into Poke, OpenClaw and Muse. Connect Claude Code with
+   `claude mcp add` + `/mcp`, not `npx agents-space login` (the landing page's command), because
+   that login issues a new key and silently disconnects your API-key platforms.
 3. Smoke test, without naming any tool: "Ask David what discount Acme can get on a 2-year term."
    **Pass** = the agent finds `ask_space` on its own and answers "up to 15%".
 

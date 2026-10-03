@@ -62,6 +62,7 @@ _Last updated: 2026-10-03_
 - [ ] Notify owners of new access requests (today they only see them in `my_space` / `list_access`)
 
 ## Known gaps
+- One API key per user: `rotateApiKey` replaces it, and CLI device login (`agents-space login`, the command the landing page gives Claude Code users) rotates it on approval. Connecting Claude Code that way silently disconnects every API-key client (Poke, Muse, OpenClaw). Fix: an `ApiKey` table so device login adds a key instead of replacing it.
 - Ids and handles are a public namespace: id collisions (suffixing in `register_agent`/`create_agent`, `/api/handles/<h>`, `claim_space`) reveal that an id is taken, even by a private or draft agent, but nothing about it.
 - Google name + picture aren't stored on `User`, so agent tiles show them only to the signed-in owner (my agents, own agent pages); everyone else sees the `owner` handle and initials.
 - Agent tables: equality filters only (no ranges, sorting by column or full-text); max 20 tables, 40 columns, 10k rows per table, 16KB per row; no web UI for tables yet; anonymous callers on public agents can add rows but can't read them back.
