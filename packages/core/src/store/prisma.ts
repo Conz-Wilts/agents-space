@@ -1,9 +1,9 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Prisma, PrismaClient } from "../generated/prisma/client";
 import { matchAgents } from "../match";
-import { AgentSchema, ConnectorActionSchema, type AccessRequest, type Agent, type Bottleneck, type Connector, type ContextNote, type User } from "../schema";
+import { AgentSchema, ConnectorActionSchema, type AccessRequest, type Agent, type Bottleneck, type Connector, type ContextNote, type DeviceLogin, type User } from "../schema";
 import type { Store } from "./index";
-import { hashKey, newApiKey, normalizeHandle, slug } from "./util";
+import { DEVICE_LOGIN_TTL_MS, handleCandidates, hashKey, newApiKey, newDeviceCode, newUserCode, normalizeHandle, normalizeUserCode, slug } from "./util";
 
 const agentInclude = { connectors: true } satisfies Prisma.AgentInclude;
 type AgentRow = Prisma.AgentGetPayload<{ include: typeof agentInclude }>;
@@ -21,7 +21,14 @@ function toAgent(r: AgentRow): Agent {
   });
 }
 
-const toUser = (r: { id: string; handle: string; keyHash: string; createdAt: Date }): User => ({ ...r, createdAt: iso(r.createdAt) });
+const toUser = (r: Prisma.UserGetPayload<object>): User => ({
+  id: r.id,
+  handle: r.handle,
+  keyHash: r.keyHash ?? undefined,
+  authId: r.authId ?? undefined,
+  email: r.email ?? undefined,
+  createdAt: iso(r.createdAt),
+});
 
 const toNote = (r: { agentId: string; slug: string; title: string; body: string; updatedAt: Date }): ContextNote => ({ ...r, updatedAt: iso(r.updatedAt) });
 
@@ -42,6 +49,15 @@ function toRequest(r: Prisma.AccessRequestGetPayload<object>): AccessRequest {
   return { ...r, createdAt: iso(r.createdAt), decidedAt: r.decidedAt ? iso(r.decidedAt) : undefined };
 }
 
+const toDeviceLogin = (r: Prisma.DeviceLoginGetPayload<object>): DeviceLogin => ({
+  userCode: r.userCode,
+  status: r.status as DeviceLogin["status"],
+  userId: r.userId ?? undefined,
+  clientName: r.clientName ?? undefined,
+  createdAt: iso(r.createdAt),
+  expiresAt: iso(r.expiresAt),
+});
+
 const toBottleneck = (r: Prisma.BottleneckGetPayload<object>): Bottleneck => ({
   ...r,
   hoursPerWeek: r.hoursPerWeek ?? undefined,
@@ -61,6 +77,12 @@ export function createPrismaStore(connectionString: string): Store {
   const getAgent = async (id: string) => {
     const r = await db.agent.findUnique({ where: { id }, include: agentInclude });
     return r ? toAgent(r) : undefined;
+  };
+
+  const rotateApiKey = async (userId: string) => {
+    const apiKey = newApiKey();
+    await db.user.update({ where: { id: userId }, data: { keyHash: hashKey(apiKey) } });
+    return apiKey;
   };
 
   return {
@@ -142,6 +164,22 @@ export function createPrismaStore(connectionString: string): Store {
       const r = await db.user.findUnique({ where: { keyHash: hashKey(key) } });
       return r ? toUser(r) : undefined;
     },
+    async userForAuth({ authId, email, name }) {
+      const found = await db.user.findUnique({ where: { authId } });
+      if (found) return toUser(found);
+      for (const handle of handleCandidates({ email, name })) {
+        try {
+          return toUser(await db.user.create({ data: { handle, authId, email } }));
+        } catch (e) {
+          if (!(e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002")) throw e;
+          // Lost a race on authId (concurrent first sign-in): return the winner.
+          const again = await db.user.findUnique({ where: { authId } });
+          if (again) return toUser(again);
+        }
+      }
+      throw new Error("Could not pick a free handle.");
+    },
+    rotateApiKey,
 
     async saveConnector(c) {
       const existing = await db.connector.findUnique({ where: { name: c.name }, select: { ownerId: true } });
@@ -203,6 +241,53 @@ export function createPrismaStore(connectionString: string): Store {
       if (a.visibility === "public") return true;
       if (!userId) return false;
       return !!(await db.accessRequest.findFirst({ where: { agentId, requesterId: userId, status: "approved" }, select: { id: true } }));
+    },
+
+    async startDeviceLogin(clientName) {
+      await db.deviceLogin.deleteMany({ where: { expiresAt: { lt: new Date() } } });
+      const deviceCode = newDeviceCode();
+      const expiresAt = new Date(Date.now() + DEVICE_LOGIN_TTL_MS);
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const userCode = newUserCode();
+        try {
+          await db.deviceLogin.create({
+            data: { deviceCodeHash: hashKey(deviceCode), userCode, clientName: clientName?.trim().slice(0, 60) || null, expiresAt },
+          });
+          return { deviceCode, userCode, expiresAt: iso(expiresAt) };
+        } catch (e) {
+          if (!(e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002")) throw e;
+        }
+      }
+      throw new Error("Could not allocate a device code.");
+    },
+    async getDeviceLogin(userCode) {
+      const code = normalizeUserCode(userCode);
+      if (!code) return undefined;
+      const r = await db.deviceLogin.findFirst({ where: { userCode: code, expiresAt: { gt: new Date() } } });
+      return r ? toDeviceLogin(r) : undefined;
+    },
+    async decideDeviceLogin(userCode, userId, decision) {
+      const code = normalizeUserCode(userCode);
+      if (!code) return false;
+      const { count } = await db.deviceLogin.updateMany({
+        where: { userCode: code, status: "pending", expiresAt: { gt: new Date() } },
+        data: { status: decision, userId },
+      });
+      return count === 1;
+    },
+    async redeemDeviceLogin(deviceCode) {
+      const deviceCodeHash = hashKey(deviceCode);
+      const r = await db.deviceLogin.findUnique({ where: { deviceCodeHash } });
+      if (!r || r.expiresAt <= new Date()) return { status: "expired" };
+      if (r.status === "pending") return { status: "pending" };
+      // Delete first: only one concurrent poll sees count === 1 and gets the key.
+      const { count } = await db.deviceLogin.deleteMany({ where: { deviceCodeHash, status: r.status } });
+      if (count !== 1) return { status: "expired" };
+      if (r.status === "denied" || !r.userId) return { status: "denied" };
+      const user = await db.user.findUnique({ where: { id: r.userId } });
+      if (!user) return { status: "expired" };
+      const apiKey = await rotateApiKey(user.id);
+      return { status: "approved", apiKey, user: toUser({ ...user, keyHash: hashKey(apiKey) }) };
     },
 
     async listBottlenecks() {

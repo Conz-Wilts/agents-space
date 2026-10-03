@@ -1,0 +1,17 @@
+{
+  "name": "agents-space",
+  "version": "0.1.0",
+  "description": "Sign in to Agents Space and connect it to Claude Code",
+  "type": "module",
+  "bin": {
+    "agents-space": "agents-space.mjs"
+  },
+  "files": [
+    "agents-space.mjs",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}

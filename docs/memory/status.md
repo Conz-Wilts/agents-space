@@ -13,8 +13,12 @@ _Last updated: 2026-10-03_
 - [x] Own connector + context system (no third-party runtime): declarative HTTP / remote-MCP actions, `{{args.x}}` / `{{secret.X}}` templates, host allowlist + private-network block, no redirects, AES-256-GCM secrets, secret redaction
 - [x] Supabase Postgres via Prisma 7 (`packages/core/prisma/schema.prisma`), in-memory fallback without `DATABASE_URL`
 - [x] Per-agent MCP tools get typed input schemas from declared action params
+- [x] Google sign-in on the web via Supabase Auth (`@supabase/ssr`, PKCE, `proxy.ts` session refresh): `/login`, `/auth/callback`, `/account` (generate/rotate MCP API key), sign out. `User` links to Supabase via `authId`
+- [x] MCP OAuth: Supabase Auth OAuth 2.1 server as authorization server, RFC 9728 metadata at `/.well-known/oauth-protected-resource/<path>`, AS-metadata passthrough at `/.well-known/oauth-authorization-server`, consent page `/oauth/consent` on web. `/mcp` returns a 401 challenge when signed out (when Supabase is configured); private per-agent endpoints too. First sign-in creates the `User` row in Postgres
+- [x] Google client credentials verified valid (token endpoint answers invalid_grant to a fake code)
 - [x] E2E tested against a local Postgres (prisma dev): accounts, private agent, notes, HTTP + MCP connectors, secrets, scope, access approval, per-agent endpoint
 - [x] Landing page at `/` from the Pencil design (responsive; network diagram zooms on lg+, hidden on mobile); directory at `/directory`
+- [x] Web `/my-agents` (avatar menu → My agents): signed-in owner's drafts + published agents
 - [x] Landing motion: scroll reveals, hero conversation plays out, task log checks off, network lines draw + packets flow, typed handle field, sticky frosted nav, spotlight on dark sections; reduced-motion safe
 
 ## Next
@@ -22,7 +26,8 @@ _Last updated: 2026-10-03_
 - [x] `apps/web` deployed: Vercel project `agents-space` (team SUPAYAPPERS, root dir `apps/web`) → https://agents-space-liard.vercel.app (CLI deploy, no git integration yet)
 - [ ] Deploy `apps/mcp` as its own Vercel project; set `PUBLIC_MCP_ORIGIN`, `NEXT_PUBLIC_MCP_URL`
 - [ ] Web: agent detail pages, visibility badges, "request access" button
-- [ ] OAuth instead of API keys; rate limiting on writes
+- [ ] Supabase dashboard: Google provider, redirect URLs, OAuth Server (path `/oauth/consent`, dynamic registration) — then test sign-in from Claude / MCP Inspector end to end (**not yet tested live**: no `NEXT_PUBLIC_SUPABASE_URL` set)
+- [ ] Rate limiting on writes
 - [ ] Embedding-based matching
 - [ ] Per-caller usage/metering; let owners revoke an approved grant
 

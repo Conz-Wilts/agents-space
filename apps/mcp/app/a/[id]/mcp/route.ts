@@ -1,7 +1,7 @@
 import { createMcpHandler } from "mcp-handler";
 import { z } from "zod";
 import { store, loadSkill, runAgentAction, scopedActions, type ActionParam } from "@agents-space/core";
-import { currentUser, requireUser, withApiKey } from "@/lib/auth";
+import { currentUser, metadataPathFor, oauthEnabled, requireUser, withAuth } from "@/lib/auth";
 import { safe, text } from "@/lib/format";
 
 const zodFor: Record<ActionParam["type"], () => z.ZodType> = {
@@ -86,6 +86,12 @@ async function serve(req: Request, ctx: { params: Promise<{ id: string }> }) {
   return handler(req);
 }
 
-const route = (req: Request, ctx: { params: Promise<{ id: string }> }) => withApiKey((r) => serve(r, ctx))(req);
+/** Public agents work anonymously; private ones ask the client to sign in (OAuth) first. */
+async function route(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const { id } = await ctx.params;
+  const agent = await store.getAgent(id);
+  const open = !agent || (agent.status === "published" && agent.visibility === "public");
+  return withAuth((r) => serve(r, ctx), { required: oauthEnabled() && !open, metadataPath: metadataPathFor(`/a/${id}/mcp`) })(req);
+}
 
 export { route as GET, route as POST, route as DELETE };

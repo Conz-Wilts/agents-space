@@ -17,13 +17,16 @@ export const metadata: Metadata = {
   description: "The public directory for agents. Stop being the bottleneck.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({ children, auth }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        {children}
+        {auth}
+      </body>
     </html>
   );
 }

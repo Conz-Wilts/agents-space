@@ -4,10 +4,14 @@ import type {
   Bottleneck,
   Connector,
   ContextNote,
+  DeviceLogin,
   NewAgentInput,
   NewBottleneckInput,
   User,
 } from "../schema";
+/** A verified Supabase Auth identity. */
+export type AuthIdentity = { authId: string; email?: string; name?: string };
+
 import { createMemoryStore } from "./memory";
 import { createPrismaStore } from "./prisma";
 
@@ -32,6 +36,10 @@ export interface Store {
   createUser(handle: string): Promise<{ user: User; apiKey: string }>;
   getUser(id: string): Promise<User | undefined>;
   userByApiKey(key: string): Promise<User | undefined>;
+  /** The account linked to a Supabase Auth user, created (handle derived from name/email) on first sign-in. */
+  userForAuth(auth: AuthIdentity): Promise<User>;
+  /** Issues a new API key (shown once), revoking the previous one. */
+  rotateApiKey(userId: string): Promise<string>;
 
   /** Create or replace. Throws if the name belongs to another owner. */
   saveConnector(c: Omit<Connector, "createdAt">): Promise<Connector>;
@@ -46,6 +54,15 @@ export interface Store {
   listAccessRequests(opts: { ownerId?: string; requesterId?: string }): Promise<AccessRequest[]>;
   decideAccessRequest(id: string, status: "approved" | "denied"): Promise<AccessRequest>;
   hasAccess(agentId: string, userId?: string): Promise<boolean>;
+
+  /** Begins a CLI sign-in. The device code is returned once; only its hash is kept. Also purges expired rows. */
+  startDeviceLogin(clientName?: string): Promise<{ deviceCode: string; userCode: string; expiresAt: string }>;
+  /** The live (unexpired) login for a user code typed by a human; sloppy input is normalized. */
+  getDeviceLogin(userCode: string): Promise<DeviceLogin | undefined>;
+  /** Approve or deny a pending, unexpired login. False if it was not pending or already expired. */
+  decideDeviceLogin(userCode: string, userId: string, decision: "approved" | "denied"): Promise<boolean>;
+  /** What the CLI's poll gets. Approved logins are consumed exactly once and yield a freshly rotated API key. */
+  redeemDeviceLogin(deviceCode: string): Promise<{ status: "pending" | "denied" | "expired" } | { status: "approved"; apiKey: string; user: User }>;
 
   listBottlenecks(): Promise<Bottleneck[]>;
   addBottleneck(input: NewBottleneckInput): Promise<Bottleneck>;
