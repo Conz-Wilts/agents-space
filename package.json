@@ -16,6 +16,7 @@
     "db:seed": "pnpm --filter @agents-space/core db:seed"
   },
   "devDependencies": {
+    "supabase": "^2.119.0",
     "turbo": "^2"
   }
 }

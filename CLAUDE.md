@@ -24,8 +24,8 @@ pnpm dev          # both apps (web :3000, mcp :3001)
 pnpm dev:mcp      # just the MCP
 pnpm build        # turbo build all
 pnpm typecheck
-pnpm db:push      # sync prisma/schema.prisma to Supabase (dev)
-pnpm db:migrate   # create a migration (prisma migrate dev)
+pnpm db:push      # DEPRECATED: schema is owned by supabase/schemas (see Rules)
+pnpm db:migrate   # DEPRECATED: use `pnpm supabase db schema declarative sync`
 pnpm db:seed      # example listings
 ```
 
@@ -47,6 +47,7 @@ Per-agent server `/a/<id>/mcp`: the shareable link. Public agents work anonymous
 ## Rules
 - **Next.js 16 / mcp-handler 2 / MCP SDK v2 / zod 4** — APIs differ from older training data. Check `node_modules/next/dist/docs/` and `node_modules/mcp-handler/README.md` before guessing. `registerTool` takes `inputSchema: z.object(...)` (not a raw shape).
 - Domain types live in `packages/core/src/schema.ts` only. Don't redefine them in apps.
+- **Schema changes go through Supabase declarative schemas, not Prisma.** Edit `supabase/schemas/**.sql`, run `pnpm supabase db schema declarative sync -f <name> --no-apply`, review and commit the generated migration, then `pnpm supabase db push`. Do not use `pnpm db:push` / `db:migrate`. While the app still queries through the Prisma client, refresh `prisma/schema.prisma` with `prisma db pull` afterwards. If you re-run `declarative generate`, delete `supabase/schemas/_cluster/extensions/orioledb.sql` (it breaks the next sync).
 - All data access goes through the `Store` interface (`packages/core/src/store/index.ts`). Prisma 7 (`prisma-client` generator → `src/generated/prisma`, gitignored, built on `postinstall`) with the `@prisma/adapter-pg` driver. Schema changes: edit `prisma/schema.prisma`, then update `store/prisma.ts` mappers + `schema.ts` zod types.
 - Connector secrets: only ever stored encrypted (`secrets.ts`), never returned, redacted from action results.
 - Default Node.js runtime. No `runtime = 'edge'`.
