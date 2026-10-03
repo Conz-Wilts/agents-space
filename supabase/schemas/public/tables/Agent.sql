@@ -34,7 +34,9 @@ CREATE INDEX "Agent_ownerId_idx" ON public."Agent" USING btree ("ownerId");
 
 CREATE INDEX "Agent_status_idx" ON public."Agent" USING btree (status);
 
-GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."Agent" TO "anon", "authenticated";
+ALTER TABLE "public"."Agent" ENABLE ROW LEVEL SECURITY;
+
+REVOKE ALL ON TABLE "public"."Agent" FROM "anon", "authenticated";
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."Agent" TO "service_role";
 

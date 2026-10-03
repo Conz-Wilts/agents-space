@@ -7,7 +7,9 @@ CREATE TABLE "public"."AgentConnector" (
   CONSTRAINT "AgentConnector_connectorName_fkey" FOREIGN KEY ("connectorName") REFERENCES public."Connector"(name) ON UPDATE CASCADE ON DELETE CASCADE
 );
 
-GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."AgentConnector" TO "anon", "authenticated";
+ALTER TABLE "public"."AgentConnector" ENABLE ROW LEVEL SECURITY;
+
+REVOKE ALL ON TABLE "public"."AgentConnector" FROM "anon", "authenticated";
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."AgentConnector" TO "service_role";
 

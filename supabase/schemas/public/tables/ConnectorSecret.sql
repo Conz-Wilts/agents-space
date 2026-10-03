@@ -7,7 +7,9 @@ CREATE TABLE "public"."ConnectorSecret" (
   CONSTRAINT "ConnectorSecret_pkey" PRIMARY KEY ("connectorName", name)
 );
 
-GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."ConnectorSecret" TO "anon", "authenticated";
+ALTER TABLE "public"."ConnectorSecret" ENABLE ROW LEVEL SECURITY;
+
+REVOKE ALL ON TABLE "public"."ConnectorSecret" FROM "anon", "authenticated";
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."ConnectorSecret" TO "service_role";
 

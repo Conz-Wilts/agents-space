@@ -8,7 +8,9 @@ CREATE TABLE "public"."ContextNote" (
   CONSTRAINT "ContextNote_pkey" PRIMARY KEY ("agentId", slug)
 );
 
-GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."ContextNote" TO "anon", "authenticated";
+ALTER TABLE "public"."ContextNote" ENABLE ROW LEVEL SECURITY;
+
+REVOKE ALL ON TABLE "public"."ContextNote" FROM "anon", "authenticated";
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."ContextNote" TO "service_role";
 

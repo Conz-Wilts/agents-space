@@ -14,7 +14,9 @@ CREATE TABLE "public"."Connector" (
 
 CREATE INDEX "Connector_ownerId_idx" ON public."Connector" USING btree ("ownerId");
 
-GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."Connector" TO "anon", "authenticated";
+ALTER TABLE "public"."Connector" ENABLE ROW LEVEL SECURITY;
+
+REVOKE ALL ON TABLE "public"."Connector" FROM "anon", "authenticated";
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."Connector" TO "service_role";
 

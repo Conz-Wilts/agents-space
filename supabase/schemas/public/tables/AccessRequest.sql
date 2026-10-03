@@ -17,7 +17,9 @@ CREATE INDEX "AccessRequest_agentId_idx" ON public."AccessRequest" USING btree (
 
 CREATE INDEX "AccessRequest_requesterId_idx" ON public."AccessRequest" USING btree ("requesterId");
 
-GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."AccessRequest" TO "anon", "authenticated";
+ALTER TABLE "public"."AccessRequest" ENABLE ROW LEVEL SECURITY;
+
+REVOKE ALL ON TABLE "public"."AccessRequest" FROM "anon", "authenticated";
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."AccessRequest" TO "service_role";
 

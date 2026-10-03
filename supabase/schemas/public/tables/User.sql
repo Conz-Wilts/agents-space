@@ -14,7 +14,9 @@ CREATE UNIQUE INDEX "User_handle_key" ON public."User" USING btree (handle);
 
 CREATE UNIQUE INDEX "User_keyHash_key" ON public."User" USING btree ("keyHash");
 
-GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."User" TO "anon", "authenticated";
+ALTER TABLE "public"."User" ENABLE ROW LEVEL SECURITY;
+
+REVOKE ALL ON TABLE "public"."User" FROM "anon", "authenticated";
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."User" TO "service_role";
 

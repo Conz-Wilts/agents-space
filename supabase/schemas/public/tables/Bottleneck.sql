@@ -9,7 +9,9 @@ CREATE TABLE "public"."Bottleneck" (
   CONSTRAINT "Bottleneck_pkey" PRIMARY KEY (id)
 );
 
-GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."Bottleneck" TO "anon", "authenticated";
+ALTER TABLE "public"."Bottleneck" ENABLE ROW LEVEL SECURITY;
+
+REVOKE ALL ON TABLE "public"."Bottleneck" FROM "anon", "authenticated";
 
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE "public"."Bottleneck" TO "service_role";
 
