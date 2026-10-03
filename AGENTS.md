@@ -40,7 +40,7 @@ Test the MCP: `npx @modelcontextprotocol/inspector` → `http://localhost:3001/m
 ## MCP tools
 Main server `/mcp`. Auth: OAuth — MCP clients sign in with Google through Supabase Auth's OAuth 2.1 server (consent page: web `/oauth/consent`; metadata: `/.well-known/oauth-protected-resource/mcp`) — or an `as_` API key (`Authorization: Bearer` / `?key=`) generated at web `/account`. Sign-in is required when Supabase is configured; otherwise anonymous = read + public use:
 - Account: `create_account`, `whoami`
-- Space: `claim_space` (Google sign-in only; locks the handle), `my_space`. `/mcp?claim=<handle>` (the URL the landing page hands out) claims it on the first signed-in request
+- Space: `claim_space` (Google sign-in only; locks the handle), `my_space`; reach someone with `ask_space(handle)`; owner whitelist `allow_access` / `revoke_access` / `list_access`. `/mcp?claim=<handle>` (the URL the landing page hands out) claims it on the first signed-in request
 - Discover: `describe_bottleneck`, `search_agents`, `list_agents`, `get_agent`
 - Access: `request_access`, `my_access_requests`, `list_access_requests`, `review_access_request`
 - Build: `create_agent` → `add_context_note` (+ `remove_context_note`) → `create_connector` → `set_connector_secret` → `attach_connector` → `test_agent` → `publish_agent` (+ `update_agent`, `detach_connector`, `unpublish_agent`, `my_agents`, `my_connectors`); prompt `build_agent`
